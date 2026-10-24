@@ -28,9 +28,10 @@ packages = ["src/charcot_gym"]
 include = [
     "src/charcot_gym/data/**/*.json",
     "src/charcot_gym/synth/*.json",
+    "src/charcot_gym/runner/*.json",
     "src/charcot_gym/tasks/**/*.json",
 ]
-exclude = ["private/**"]
+exclude = ["private/**", "internal/**"]
 
 [tool.ruff]
 target-version = "py311"
