@@ -96,16 +96,6 @@ class _ReportContext:
     sex: str
 
 
-@dataclass(frozen=True)
-class _CBCContext:
-    rng: random.Random
-    calibration: dict[str, Any]
-    scenario: dict[str, Any]
-    sex: str
-    phase: str
-    variant: str | None
-
-
 def generate_task_sets(
     private_seed: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -505,7 +495,10 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
         days_between = scenario["history_cycles"]["days_between"]
         result = []
         for cycle in range(1, context.history_cycles + 1):
-            effective = (collection_date - timedelta(days=days_between * cycle)).isoformat()
+            current_cycle = context.history_cycles + 1
+            effective = (
+                collection_date - timedelta(days=days_between * (current_cycle - cycle))
+            ).isoformat()
             cycle_result = []
             for entry in analytes:
                 value = _draw_value(
@@ -523,17 +516,7 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
                         "cycle": cycle,
                     }
                 )
-            _enforce_cbc_coupling(
-                cycle_result,
-                _CBCContext(
-                    rng=rng,
-                    calibration=calibration,
-                    scenario=scenario,
-                    sex=context.sex,
-                    phase="history",
-                    variant=None,
-                ),
-            )
+            _enforce_cbc_coupling(cycle_result, rng, calibration)
             result.extend(cycle_result)
         return result
     settings = calibration["history_results"]
@@ -566,17 +549,7 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
                 "date": effective,
             }
         )
-    _enforce_cbc_coupling(
-        result,
-        _CBCContext(
-            rng=rng,
-            calibration=calibration,
-            scenario=scenario,
-            sex=context.sex,
-            phase="history",
-            variant=None,
-        ),
-    )
+    _enforce_cbc_coupling(result, rng, calibration)
     return result
 
 
@@ -623,7 +596,6 @@ def _draw_current(context: _CurrentContext) -> list[dict[str, Any]]:
     for entry in analytes:
         rule = scenario["current_rules"].get(entry["code"])
         if scenario["id"] == "oncology_precycle" and entry["code"] in {
-            "6690-2",
             "751-8",
             "777-3",
         }:
@@ -633,7 +605,10 @@ def _draw_current(context: _CurrentContext) -> list[dict[str, Any]]:
         elif scenario["id"] == "oncology_precycle" and entry["code"] == marker_code:
             assert marker_code is not None
             assert marker_trend is not None
-            history = next(item for item in histories if item["entry"]["code"] == marker_code)
+            history = max(
+                (item for item in histories if item["entry"]["code"] == marker_code),
+                key=lambda item: item["date"],
+            )
             trend_rule = scenario["current_rules"]["tumor_marker"]
             change = rng.uniform(trend_rule["delta_min"], trend_rule["delta_max"])
             value = (
@@ -653,17 +628,7 @@ def _draw_current(context: _CurrentContext) -> list[dict[str, Any]]:
         else:
             value = _draw_value(rng, entry, rule, calibration, sex)
         result.append({"entry": entry, "value": value})
-    _enforce_cbc_coupling(
-        result,
-        _CBCContext(
-            rng=rng,
-            calibration=calibration,
-            scenario=scenario,
-            sex=sex,
-            phase="current",
-            variant=variant,
-        ),
-    )
+    _enforce_cbc_coupling(result, rng, calibration)
     return result
 
 
@@ -703,12 +668,9 @@ def _reference_range(
 
 def _enforce_cbc_coupling(
     values: list[dict[str, Any]],
-    context: _CBCContext,
+    rng: random.Random,
+    calibration: dict[str, Any],
 ) -> None:
-    rng = context.rng
-    calibration = context.calibration
-    scenario = context.scenario
-    sex = context.sex
     by_code = {item["entry"]["code"]: item for item in values}
     if "718-7" in by_code and "4544-3" in by_code:
         factor_rule = calibration["hematology_coupling"]["hematocrit_factor"]
@@ -721,21 +683,10 @@ def _enforce_cbc_coupling(
     anc = by_code["751-8"]["value"]
     wbc_item = by_code["6690-2"]
     wbc_entry = wbc_item["entry"]
-    rule = scenario[f"{context.phase}_rules"].get("6690-2")
-    if context.phase == "current" and rule is not None and context.variant is not None:
-        rule = rule[context.variant]
-    reference = rule or _reference_range(wbc_entry, sex, calibration)
-    ratio = calibration["hematology_coupling"]["anc_to_wbc_max_ratio"]
+    fraction_rule = calibration["hematology_coupling"]["neutrophil_fraction"]
+    fraction = rng.uniform(fraction_rule["min"], fraction_rule["max"])
     precision = wbc_entry["precision"]
-    scale = 10**precision
-    lower = max(reference["min"], anc / ratio)
-    lower = math.ceil(lower * scale - 1e-12) / scale
-    upper = reference["max"]
-    if lower > upper:
-        raise ValueError("Configured WBC bounds cannot accommodate the ANC value.")
-    wbc = round(rng.uniform(lower, upper), precision)
-    if wbc < anc / ratio:
-        wbc = lower
+    wbc = round(anc / fraction, precision)
     wbc_item["value"] = int(wbc) if precision == 0 else wbc
 
 

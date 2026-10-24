@@ -7,6 +7,7 @@ import subprocess
 import sys
 from collections import Counter
 from datetime import date, timedelta
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -332,8 +333,67 @@ def test_synthesis_is_deterministic_and_scenario_rules_hold() -> None:
             )
 
 
+def test_oncology_prior_cycles_are_chronological() -> None:
+    public, private = generate_task_sets(PRIVATE_SEED)
+    for task in public + private:
+        if task["metadata"]["scenario_id"] != "oncology_precycle":
+            continue
+        cycle_count = task["metadata"]["history_cycles"]
+        current_cycle = cycle_count + 1
+        document = next(
+            entry["resource"]
+            for entry in task["initial_state"]["entry"]
+            if entry["resource"]["resourceType"] == "DocumentReference"
+        )
+        collection_date = date.fromisoformat(document["date"])
+        expected_cycle_dates = [
+            collection_date - timedelta(days=21 * (current_cycle - cycle))
+            for cycle in range(1, current_cycle)
+        ]
+        assert expected_cycle_dates == sorted(expected_cycle_dates)
+        assert expected_cycle_dates[-1] == collection_date - timedelta(days=21)
+        history_by_code: dict[str, list[dict[str, Any]]] = {}
+        for entry in task["initial_state"]["entry"]:
+            resource = entry["resource"]
+            if resource["resourceType"] == "Observation":
+                code = resource["code"]["coding"][0]["code"]
+                history_by_code.setdefault(code, []).append(resource)
+        for resources in history_by_code.values():
+            dates = [date.fromisoformat(resource["effectiveDateTime"]) for resource in resources]
+            assert dates == expected_cycle_dates
+            assert all(first < second for first, second in pairwise(dates))
+
+        report = base64.b64decode(document["content"][0]["attachment"]["data"]).decode("utf-8")
+        report_cycles = [
+            re.search(r"Previous result: cycle (\d+) .* on (\d{4}-\d{2}-\d{2})\.", line)
+            for line in report.splitlines()
+            if line.startswith("Previous result: cycle ")
+        ]
+        assert all(match is not None for match in report_cycles)
+        report_rows = [(int(match[1]), date.fromisoformat(match[2])) for match in report_cycles]
+        assert [cycle for cycle, _ in report_rows] == sorted(cycle for cycle, _ in report_rows)
+        for cycle, prior_date in report_rows:
+            assert prior_date == expected_cycle_dates[cycle - 1]
+
+
 def test_generated_hematology_values_are_coupled() -> None:
     public, private = generate_task_sets(PRIVATE_SEED)
+    calibration = json.loads(
+        (ROOT / "src" / "charcot_gym" / "synth" / "calibration.json").read_text(encoding="utf-8")
+    )
+    analytes = json.loads(
+        (ROOT / "src" / "charcot_gym" / "data" / "loinc_subset.json").read_text(encoding="utf-8")
+    )
+    fraction_range = calibration["hematology_coupling"]["neutrophil_fraction"]
+    wbc_precision = next(entry["precision"] for entry in analytes if entry["code"] == "6690-2")
+    half_step = 0.5 * 10 ** (-wbc_precision)
+
+    def assert_neutrophil_fraction(anc: float, wbc: float) -> None:
+        observed_fraction = anc / wbc
+        rounding_tolerance = fraction_range["max"] * half_step / wbc
+        assert fraction_range["min"] - rounding_tolerance <= observed_fraction
+        assert observed_fraction <= fraction_range["max"] + rounding_tolerance
+
     for task in public + private:
         current = {item["code"]: item["value"] for item in task["gold"]["expected"]}
         assert ("718-7" in current) == ("4544-3" in current)
@@ -344,7 +404,7 @@ def test_generated_hematology_values_are_coupled() -> None:
         if "751-8" in current:
             assert "6690-2" in current
             assert current["751-8"] < current["6690-2"]
-            assert current["751-8"] <= 0.85 * current["6690-2"]
+            assert_neutrophil_fraction(current["751-8"], current["6690-2"])
 
         histories: dict[str, dict[str, float]] = {}
         for entry in task["initial_state"]["entry"]:
@@ -369,7 +429,7 @@ def test_generated_hematology_values_are_coupled() -> None:
             if "751-8" in history:
                 assert "6690-2" in history
                 assert history["751-8"] < history["6690-2"]
-                assert history["751-8"] <= 0.85 * history["6690-2"]
+                assert_neutrophil_fraction(history["751-8"], history["6690-2"])
 
 
 def test_rendered_cbc_reference_ranges_follow_patient_sex() -> None:
