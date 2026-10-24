@@ -229,7 +229,7 @@ CORE_TOOLS.register(
 CORE_TOOLS.register(
     ToolSpec(
         name="terminology_search",
-        description="Search bundled laboratory terms by display name or synonym.",
+        description="Search bundled terminology by display name or synonym.",
         parameters={
             "type": "object",
             "properties": {
