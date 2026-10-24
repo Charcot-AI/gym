@@ -17,6 +17,26 @@
           "gender": "female",
           "birthDate": "1992-11-21"
         }
+      },
+      {
+        "resource": {
+          "resourceType": "Encounter",
+          "id": "encounter-smoke-search-first",
+          "status": "completed",
+          "class": [
+            {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+                  "code": "AMB"
+                }
+              ]
+            }
+          ],
+          "subject": {"reference": "Patient/patient-cora"},
+          "actualPeriod": {"start": "2025-02-14"},
+          "type": [{"text": "Primary care visit"}]
+        }
       }
     ]
   },

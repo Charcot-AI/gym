@@ -9,6 +9,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class TaskReview(BaseModel):
+    """Review metadata exposed with a task's public view."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: Literal["unreviewed", "approved", "rejected"] = "unreviewed"
+    reviewer: str | None = None
+    notes: str | None = None
+
+
 class Task(BaseModel):
     """Validated task definition with a filtered public view."""
 
@@ -25,6 +35,8 @@ class Task(BaseModel):
     verifier: str = Field(min_length=1)
     max_steps: int = Field(gt=0)
     seed: int = 0
+    review: TaskReview = Field(default_factory=TaskReview)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("tools", mode="before")
     @classmethod
@@ -57,8 +69,8 @@ class Task(BaseModel):
         return self
 
     def public_view(self) -> dict[str, Any]:
-        """Return task metadata and input data without its verification target."""
-        return self.model_dump(mode="json", exclude={"gold"})
+        """Return task input and review data without gold or internal metadata."""
+        return self.model_dump(mode="json", exclude={"gold", "metadata"})
 
 
 def load_tasks(directory: str | Path | None = None) -> list[Task]:

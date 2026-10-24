@@ -8,8 +8,9 @@ from typing import Any
 
 from charcot_gym.fhir_store import FHIRStore
 from charcot_gym.task import Task
+from charcot_gym.terminology import terminology_search
 
-ToolHandler = Callable[[FHIRStore, Mapping[str, Any]], dict[str, Any]]
+ToolHandler = Callable[[FHIRStore, Mapping[str, Any]], Any]
 
 
 class ToolExecutionError(ValueError):
@@ -77,7 +78,7 @@ class ToolRegistry:
         arguments: Mapping[str, Any],
         store: FHIRStore,
         allowed: tuple[str, ...],
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Validate and execute a named tool for a single task."""
         if name not in allowed:
             raise ToolExecutionError(f"tool is not allowed for this task: {name}")
@@ -149,6 +150,14 @@ def _update(store: FHIRStore, arguments: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _search_terminology(_store: FHIRStore, arguments: Mapping[str, Any]) -> list[dict[str, str]]:
+    return terminology_search(
+        arguments["system"],
+        arguments["query"],
+        arguments.get("limit", 10),
+    )
+
+
 CORE_TOOLS = ToolRegistry()
 CORE_TOOLS.register(
     ToolSpec(
@@ -215,6 +224,23 @@ CORE_TOOLS.register(
             "additionalProperties": False,
         },
         handler=_update,
+    )
+)
+CORE_TOOLS.register(
+    ToolSpec(
+        name="terminology_search",
+        description="Search bundled laboratory terms by display name or synonym.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "system": {"type": "string"},
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "default": 10, "minimum": 1},
+            },
+            "required": ["system", "query"],
+            "additionalProperties": False,
+        },
+        handler=_search_terminology,
     )
 )
 

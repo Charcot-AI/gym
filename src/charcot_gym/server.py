@@ -33,28 +33,30 @@ class ScoreRequest(BaseModel):
 
 
 def create_app(tasks: list[Task] | None = None) -> FastAPI:
-    """Build an HTTP service that only exposes public tasks and observations."""
-    task_list = [
-        task for task in (tasks if tasks is not None else load_tasks()) if task.split == "public"
-    ]
+    """Build an HTTP service; private tasks require explicit task loading."""
+    task_list = (
+        list(tasks)
+        if tasks is not None
+        else [task for task in load_tasks() if task.split == "public"]
+    )
     sessions: dict[str, ClinicalEnv] = {}
     app = FastAPI(title="Charcot Gym")
 
     @app.get("/tasks")
     def list_tasks() -> list[dict[str, Any]]:
         """List task views without verification data."""
-        return [task.public_view() for task in task_list if task.split == "public"]
+        return [task.public_view() for task in task_list]
 
     @app.post("/reset")
     def reset_episode(request: ResetRequest) -> dict[str, Any]:
         """Create an isolated session and return its initial observation."""
         if request.task_id not in {task.id for task in task_list}:
-            raise HTTPException(status_code=404, detail="public task not found")
+            raise HTTPException(status_code=404, detail="task not found")
         environment = ClinicalEnv(task_list)
         try:
             observation = environment.reset(request.task_id, seed=request.seed)
         except ValueError as error:
-            raise HTTPException(status_code=404, detail="public task not found") from error
+            raise HTTPException(status_code=404, detail="task not found") from error
         session_id = token_urlsafe(24)
         sessions[session_id] = environment
         return {"session_id": session_id, "observation": observation.model_dump(mode="json")}
