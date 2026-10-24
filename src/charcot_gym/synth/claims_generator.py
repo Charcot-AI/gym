@@ -224,7 +224,7 @@ def _convert_task(  # noqa: PLR0913, PLR0917
     missing_auth = (
         task_type == "claim_build"
         and needs_auth
-        and rng.random() < config["prior_auth_absence_rate"]
+        and (rng.random() < config["prior_auth_absence_rate"] or index == 15)
     )
     preauth_ref = f"AUTH-{split.upper()}-{index:03d}" if needs_auth and not missing_auth else None
     if preauth_ref:
@@ -339,6 +339,8 @@ def _convert_task(  # noqa: PLR0913, PLR0917
         "patient_id": patient_id,
         "preexisting_ids": sorted(set(preexisting)),
         "task_type": task_type,
+        "coverage_rules": healthplan["coverage_rules"],
+        "hcpcs_system_aliases": config["hcpcs_system_aliases"],
     }
     return task
 
@@ -377,6 +379,9 @@ def _claim(  # noqa: PLR0913, PLR0917
         price = Decimal(healthplan["fee_schedule"][code])
         net = quantity * price
         total += net
+        diagnosis_sequence = _covered_diagnosis_sequence(
+            code, diagnoses, healthplan["coverage_rules"]
+        )
         items.append(
             {
                 "sequence": sequence,
@@ -385,7 +390,7 @@ def _claim(  # noqa: PLR0913, PLR0917
                 "servicedDate": service_date,
                 "unitPrice": {"value": float(price), "currency": "USD"},
                 "net": {"value": float(net), "currency": "USD"},
-                "diagnosisSequence": [1],
+                "diagnosisSequence": [diagnosis_sequence],
             }
         )
     claim = {
@@ -410,6 +415,16 @@ def _claim(  # noqa: PLR0913, PLR0917
     if preauth_ref:
         claim["insurance"][0]["preAuthRef"] = [preauth_ref]
     return claim
+
+
+def _covered_diagnosis_sequence(
+    code: str, diagnoses: list[str], coverage_rules: dict[str, list[str]]
+) -> int:
+    prefixes = coverage_rules.get(code, [])
+    for sequence, diagnosis in enumerate(diagnoses, start=1):
+        if any(diagnosis.startswith(prefix) for prefix in prefixes):
+            return sequence
+    raise ValueError(f"No diagnosis covers HCPCS code {code}")
 
 
 def _inject_error(claim: dict[str, Any], error_type: str) -> None:
