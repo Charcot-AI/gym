@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from importlib.resources import files
 from typing import Any
 
 from charcot_gym.fhir_store import FHIRStore
@@ -158,6 +160,17 @@ def _search_terminology(_store: FHIRStore, arguments: Mapping[str, Any]) -> list
     )
 
 
+def _healthplan_rules(_store: FHIRStore, arguments: Mapping[str, Any]) -> dict[str, Any]:
+    config = json.loads(
+        files("charcot_gym").joinpath("synth", "healthplans.json").read_text(encoding="utf-8")
+    )
+    healthplan_id = arguments["healthplan_id"]
+    for plan in config["plans"]:
+        if plan["healthplan_id"] == healthplan_id:
+            return {key: value for key, value in plan.items()}
+    raise ValueError(f"unknown healthplan_id: {healthplan_id}")
+
+
 CORE_TOOLS = ToolRegistry()
 CORE_TOOLS.register(
     ToolSpec(
@@ -241,6 +254,19 @@ CORE_TOOLS.register(
             "additionalProperties": False,
         },
         handler=_search_terminology,
+    )
+)
+CORE_TOOLS.register(
+    ToolSpec(
+        name="healthplan_rules",
+        description="Read the configured healthplan rules by healthplan_id.",
+        parameters={
+            "type": "object",
+            "properties": {"healthplan_id": {"type": "string"}},
+            "required": ["healthplan_id"],
+            "additionalProperties": False,
+        },
+        handler=_healthplan_rules,
     )
 )
 

@@ -307,7 +307,11 @@ def test_oncology_hemoglobin_ranges_and_cycle_trend_cover_both_families() -> Non
     hemoglobin_ranges = oncology_config["current_rules"]["718-7"]["by_sex"]
     history_rule = oncology_config["history_relationships"]["718-7"]
     oncology = [task for task in tasks if task.metadata.get("scenario_id") == "oncology_precycle"]
-    assert {task.family for task in oncology} == {"document_fhir", "clinical_coding"}
+    assert {task.family for task in oncology} == {
+        "document_fhir",
+        "clinical_coding",
+        "claims",
+    }
     for task in oncology:
         patient = next(
             entry["resource"]

@@ -12,6 +12,10 @@ SUPPORTED_TYPES = {
     "Condition",
     "Encounter",
     "DocumentReference",
+    "Organization",
+    "Coverage",
+    "MedicationAdministration",
+    "ClaimResponse",
     "Claim",
 }
 REFERENCE_PATTERN = re.compile(r"^([A-Z][A-Za-z]+)/([A-Za-z0-9.-]{1,64})$")
@@ -21,6 +25,10 @@ REQUIRED_FIELDS = {
     "Condition": ("subject", "code"),
     "Encounter": ("status", "class"),
     "DocumentReference": ("status", "content"),
+    "Organization": (),
+    "Coverage": ("status", "beneficiary", "payor"),
+    "MedicationAdministration": ("status", "medication", "subject"),
+    "ClaimResponse": ("status", "type", "use", "patient", "outcome"),
     "Claim": ("status", "type", "use", "patient"),
 }
 
