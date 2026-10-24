@@ -1,0 +1,101 @@
+{
+  "source": "default prior",
+  "scenarios": [
+    {
+      "id": "routine",
+      "weight": 0.4,
+      "panels": ["weighted"],
+      "history_rules": {},
+      "current_rules": {}
+    },
+    {
+      "id": "aki",
+      "weight": 0.12,
+      "panels": ["BMP"],
+      "history_rules": {
+        "2160-0": {"min": 0.7, "max": 1.1}
+      },
+      "current_rules": {
+        "2160-0": {"min": 1.6, "max": 3.0, "min_ratio_to_history": 1.5},
+        "3094-0": {"min": 25, "max": 60}
+      }
+    },
+    {
+      "id": "uncontrolled_diabetes",
+      "weight": 0.12,
+      "panels": ["HbA1c", "BMP"],
+      "history_rules": {
+        "4548-4": {"min": 7.0, "max": 9.0}
+      },
+      "current_rules": {
+        "4548-4": {"min": 8.5, "max": 11.5},
+        "2345-7": {"min": 180, "max": 320}
+      }
+    },
+    {
+      "id": "hypokalemia",
+      "weight": 0.12,
+      "panels": ["BMP"],
+      "history_rules": {
+        "2823-3": {"min": 3.6, "max": 4.6}
+      },
+      "current_rules": {
+        "2823-3": {"min": 2.8, "max": 3.3}
+      }
+    },
+    {
+      "id": "oncology_precycle",
+      "weight": 0.24,
+      "panels": ["CBC + ANC", "LFT", "creatinine", "tumor marker"],
+      "analyte_codes": [
+        "718-7", "4544-3", "6690-2", "777-3", "751-8",
+        "1742-6", "1920-8", "2160-0", "2039-6", "2857-1"
+      ],
+      "history_cycles": {"min": 1, "max": 2, "days_between": 21},
+      "hold_probability": 0.4,
+      "variants": [
+        {
+          "id": "breast",
+          "sex": "female",
+          "condition_code": "C50.911",
+          "marker_code": "2039-6"
+        },
+        {
+          "id": "colon",
+          "sex": null,
+          "condition_code": "C18.9",
+          "marker_code": "2039-6"
+        },
+        {
+          "id": "prostate",
+          "sex": "male",
+          "condition_code": "C61",
+          "marker_code": "2857-1"
+        }
+      ],
+      "history_rules": {
+        "718-7": {"min": 12.0, "max": 17.5},
+        "4544-3": {"min": 36, "max": 52},
+        "6690-2": {"min": 4.5, "max": 11.0},
+        "777-3": {"min": 150, "max": 350},
+        "751-8": {"min": 1.8, "max": 7.7},
+        "1742-6": {"min": 7, "max": 56},
+        "1920-8": {"min": 10, "max": 40},
+        "2160-0": {"min": 0.6, "max": 1.3},
+        "2039-6": {"min": 0.5, "max": 3.0},
+        "2857-1": {"min": 0.5, "max": 4.0}
+      },
+      "current_rules": {
+        "751-8": {
+          "hold": {"min": 0.5, "max": 1.4},
+          "clear": {"min": 1.6, "max": 5.0}
+        },
+        "777-3": {
+          "hold": {"min": 50, "max": 99},
+          "clear": {"min": 150, "max": 350}
+        },
+        "tumor_marker": {"trend": "rising_or_falling", "delta_min": 0.1, "delta_max": 2.0}
+      }
+    }
+  ]
+}

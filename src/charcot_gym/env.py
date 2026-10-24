@@ -25,7 +25,7 @@ class Observation(BaseModel):
     prompt: str
     tools: list[dict[str, Any]]
     step_count: int
-    result: dict[str, Any] | None = None
+    result: Any = None
 
 
 class ToolCall(BaseModel):
@@ -122,7 +122,7 @@ class ClinicalEnv:
         self._step_count += 1
         info: dict[str, Any] = {"invalid_actions": self._invalid_actions}
         action_record = _encode_action(action)
-        result: dict[str, Any]
+        result: Any
         if isinstance(action, ToolCall):
             try:
                 result = self._tools.execute(
@@ -197,7 +197,7 @@ class ClinicalEnv:
         )
         return Score.model_validate(score.model_dump(mode="python"))
 
-    def _observation(self, result: dict[str, Any] | None) -> Observation:
+    def _observation(self, result: Any | None) -> Observation:
         if self._task is None:
             raise RuntimeError("reset must be called before creating observations")
         return Observation(
