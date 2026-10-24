@@ -23,19 +23,142 @@
     "platelet_code": "D69.59",
     "review_note": "Requires oncologist and certified coder review."
   },
-  "diagnosis_labels": {
-    "I10": {"soap_full": "Primary hypertension", "soap_brief": "Hypertension", "soap_abbrev": "HTN"},
-    "E78.5": {"soap_full": "Hyperlipidemia", "soap_brief": "Hyperlipidemia", "soap_abbrev": "HLD"},
-    "E66.9": {"soap_full": "Obesity", "soap_brief": "Obesity", "soap_abbrev": "Obesity"},
-    "Z00.00": {"soap_full": "Adult preventive examination", "soap_brief": "Preventive exam", "soap_abbrev": "Adult wellness exam"},
-    "N17.9": {"soap_full": "Acute kidney injury", "soap_brief": "Acute kidney injury", "soap_abbrev": "AKI"},
-    "E11.65": {"soap_full": "Type 2 diabetes mellitus with hyperglycemia", "soap_brief": "Type 2 diabetes with hyperglycemia", "soap_abbrev": "T2DM w/ hyperglycemia"},
-    "E87.6": {"soap_full": "Hypokalemia", "soap_brief": "Hypokalemia", "soap_abbrev": "HypoK"},
-    "Z51.11": {"soap_full": "Encounter for antineoplastic chemotherapy", "soap_brief": "Encounter for chemotherapy", "soap_abbrev": "Pre-chemo visit"},
-    "Z53.09": {"soap_full": "Treatment not carried out because of a contraindication", "soap_brief": "Treatment deferred for a contraindication", "soap_abbrev": "Treatment deferred"},
-    "T45.1X5A": {"soap_full": "Adverse effect of antineoplastic therapy", "soap_brief": "Antineoplastic therapy adverse effect", "soap_abbrev": "Antineoplastic drug adverse effect"},
-    "D70.1": {"soap_full": "Chemotherapy-induced neutropenia", "soap_brief": "Treatment-related neutropenia", "soap_abbrev": "Chemo-related neutropenia"},
-    "D69.59": {"soap_full": "Secondary thrombocytopenia", "soap_brief": "Treatment-related thrombocytopenia", "soap_abbrev": "Secondary thrombocytopenia"}
+  "assessment_term_allowlist": [
+    "acute kidney injury",
+    "AKI",
+    "hypokalemia",
+    "hypoK"
+  ],
+  "phrasing": {
+    "routine": {
+      "diagnoses": {
+        "I10": [
+          {"public": "Blood pressure remains at goal on the current regimen.", "abbrev": "BP remains at goal on the current regimen."},
+          {"public": "Current therapy continues to keep blood pressure controlled.", "abbrev": "Current therapy keeps BP controlled."},
+          {"public": "Blood pressure is stable with the present treatment plan.", "abbrev": "BP is stable with the present plan."}
+        ],
+        "E78.5": [
+          {"public": "Lipid trends are stable on the current therapy.", "abbrev": "Lipid trends are stable on current therapy."},
+          {"public": "Recent lipid results were reviewed; continue the present approach.", "abbrev": "Recent lipids reviewed; continue current approach."},
+          {"public": "The current plan is maintaining stable lipid measurements.", "abbrev": "Current plan is maintaining stable lipid results."}
+        ],
+        "E66.9": [
+          {"public": "Nutrition and activity goals were reviewed alongside weight management.", "abbrev": "Nutrition and activity goals reviewed with weight management."},
+          {"public": "Continue working toward the agreed nutrition and activity goals.", "abbrev": "Continue nutrition and activity goals."},
+          {"public": "Weight-management goals were discussed and will be revisited at follow-up.", "abbrev": "Weight goals discussed; revisit at follow-up."}
+        ],
+        "Z00.00": [
+          {"public": "Preventive needs were reviewed; no new concerns were raised.", "abbrev": "Preventive needs reviewed; no new concerns."},
+          {"public": "Routine health maintenance was discussed with the patient.", "abbrev": "Health maintenance discussed."},
+          {"public": "The visit focused on preventive care and ongoing wellness.", "abbrev": "Visit focused on preventive care."}
+        ]
+      },
+      "plans": [
+        {"public": "Continue the current care plan and follow up as scheduled.", "abbrev": "Continue current plan; follow up as scheduled."},
+        {"public": "Maintain the present regimen and return for the next planned visit.", "abbrev": "Maintain regimen; return as planned."},
+        {"public": "Continue routine monitoring and revisit the plan at follow-up.", "abbrev": "Continue routine monitoring; revisit at follow-up."}
+      ]
+    },
+    "aki": [
+      {
+        "assessment_public": "Creatinine rose from baseline {baseline_creatinine} to {current_creatinine} mg/dL; acute kidney injury is likely prerenal.",
+        "assessment_abbrev": "Cr rose from baseline {baseline_creatinine} to {current_creatinine} mg/dL; AKI is likely prerenal.",
+        "plan_public": "Encourage hydration and repeat renal testing within 48 hours.",
+        "plan_abbrev": "Encourage fluids; repeat renal labs within 48 hours."
+      },
+      {
+        "assessment_public": "Renal function worsened, with creatinine increasing from {baseline_creatinine} to {current_creatinine} mg/dL; this may be prerenal.",
+        "assessment_abbrev": "Cr increased from {baseline_creatinine} to {current_creatinine} mg/dL; likely prerenal AKI.",
+        "plan_public": "Review oral intake and medications, then recheck renal function promptly.",
+        "plan_abbrev": "Review intake and medications; recheck renal function promptly."
+      },
+      {
+        "assessment_public": "A change in creatinine from {baseline_creatinine} to {current_creatinine} mg/dL suggests an acute prerenal process.",
+        "assessment_abbrev": "Cr changed from {baseline_creatinine} to {current_creatinine} mg/dL, suggesting a prerenal process.",
+        "plan_public": "Support hydration and arrange close follow-up of renal labs.",
+        "plan_abbrev": "Support hydration; follow renal labs closely."
+      }
+    ],
+    "uncontrolled_diabetes": [
+      {
+        "assessment_public": "Type 2 diabetes remains above goal; A1c is {a1c}% and fasting glucose is {glucose} mg/dL.",
+        "assessment_abbrev": "T2DM remains above goal; A1c {a1c}% and fasting glucose {glucose} mg/dL.",
+        "plan_public": "Review adherence and adjust the regimen, with repeat monitoring at follow-up.",
+        "plan_abbrev": "Review adherence; adjust regimen and repeat monitoring."
+      },
+      {
+        "assessment_public": "Glycemic control is suboptimal with A1c {a1c}% and fasting glucose {glucose} mg/dL.",
+        "assessment_abbrev": "Glucose control is above goal: A1c {a1c}%, fasting glucose {glucose} mg/dL.",
+        "plan_public": "Discuss medication and nutrition changes, then repeat glucose monitoring.",
+        "plan_abbrev": "Discuss medication and nutrition changes; repeat glucose monitoring."
+      },
+      {
+        "assessment_public": "A1c of {a1c}% and fasting glucose of {glucose} mg/dL remain above the agreed targets.",
+        "assessment_abbrev": "A1c {a1c}% and fasting glucose {glucose} mg/dL remain above target.",
+        "plan_public": "Update the self-management plan and arrange follow-up monitoring.",
+        "plan_abbrev": "Update self-management plan; arrange follow-up monitoring."
+      }
+    ],
+    "hypokalemia": [
+      {
+        "assessment_public": "Potassium is {potassium} mmol/L, below the reference range.",
+        "assessment_abbrev": "K {potassium} mmol/L, low.",
+        "plan_public": "Replace potassium and recheck the level after treatment.",
+        "plan_abbrev": "Replace K and recheck after treatment."
+      },
+      {
+        "assessment_public": "The serum potassium level is low at {potassium} mmol/L.",
+        "assessment_abbrev": "K is low at {potassium} mmol/L.",
+        "plan_public": "Begin replacement and arrange a repeat level.",
+        "plan_abbrev": "Begin K replacement; repeat level."
+      },
+      {
+        "assessment_public": "Potassium measures {potassium} mmol/L and needs correction.",
+        "assessment_abbrev": "K {potassium} mmol/L; correction is needed.",
+        "plan_public": "Provide replacement therapy and monitor the response.",
+        "plan_abbrev": "Replace K and monitor response."
+      }
+    ],
+    "oncology_clear": [
+      {
+        "assessment_public": "Counts and chemistries are acceptable; proceed with cycle {current_cycle} infusion today.",
+        "assessment_abbrev": "Counts and chemistries look acceptable; proceed with C{current_cycle} infusion today.",
+        "plan_public": "Proceed with the planned infusion and review counts before the next cycle.",
+        "plan_abbrev": "Proceed as planned; review counts before next cycle."
+      },
+      {
+        "assessment_public": "Laboratory results support proceeding with cycle {current_cycle} as scheduled.",
+        "assessment_abbrev": "Labs support proceeding with C{current_cycle} as scheduled.",
+        "plan_public": "Continue the infusion schedule with routine laboratory monitoring.",
+        "plan_abbrev": "Continue schedule with routine lab monitoring."
+      },
+      {
+        "assessment_public": "No laboratory finding today requires a delay; give cycle {current_cycle} as planned.",
+        "assessment_abbrev": "No lab finding requires a delay; give C{current_cycle} as planned.",
+        "plan_public": "Maintain the planned schedule and repeat pre-cycle labs at the next visit.",
+        "plan_abbrev": "Maintain schedule; repeat pre-cycle labs next visit."
+      }
+    ],
+    "oncology_hold": [
+      {
+        "assessment_public": "Cycle {current_cycle} held today: ANC {anc} (protocol threshold {anc_threshold}) and platelets {platelets} (protocol threshold {platelet_threshold}) are low after cycle {previous_cycle}; counts have fallen following chemotherapy.",
+        "assessment_abbrev": "C{current_cycle} held: ANC {anc} (cutoff {anc_threshold}) and PLT {platelets} (cutoff {platelet_threshold}) are low after C{previous_cycle}; counts fell after chemotherapy.",
+        "plan_public": "Delay the infusion, provide supportive care, and repeat counts before rescheduling.",
+        "plan_abbrev": "Defer infusion; provide supportive care and repeat CBC before rescheduling."
+      },
+      {
+        "assessment_public": "Before cycle {current_cycle}, ANC is {anc} (limit {anc_threshold}) and platelets are {platelets} (limit {platelet_threshold}); defer today because of chemotherapy-related marrow suppression.",
+        "assessment_abbrev": "Before C{current_cycle}, ANC {anc} (limit {anc_threshold}) and PLT {platelets} (limit {platelet_threshold}); defer after chemotherapy-related count suppression.",
+        "plan_public": "Allow time for count recovery and reassess with a repeat blood count.",
+        "plan_abbrev": "Allow count recovery; reassess with repeat CBC."
+      },
+      {
+        "assessment_public": "Low counts after cycle {previous_cycle} — ANC {anc} versus {anc_threshold} and platelets {platelets} versus {platelet_threshold} — make cycle {current_cycle} unsafe to give today following chemotherapy-related count suppression.",
+        "assessment_abbrev": "After C{previous_cycle}, ANC {anc}/{anc_threshold} and PLT {platelets}/{platelet_threshold}; hold C{current_cycle} after chemotherapy-related count suppression.",
+        "plan_public": "Continue supportive measures and repeat laboratory testing before the next attempt.",
+        "plan_abbrev": "Continue supportive care; repeat labs before the next attempt."
+      }
+    ]
   },
   "lab_abbreviations": {
     "2345-7": "Gluc",
@@ -59,14 +182,6 @@
     "751-8": "ANC",
     "2039-6": "CEA",
     "2857-1": "PSA"
-  },
-  "plans": {
-    "routine": "Continue preventive care and routine follow-up.",
-    "aki": "Review renal function and arrange follow-up testing.",
-    "uncontrolled_diabetes": "Adjust the diabetes care plan and repeat monitoring.",
-    "hypokalemia": "Replace potassium and recheck the level.",
-    "oncology_clear": "Proceed with the planned infusion and monitor blood counts.",
-    "oncology_hold": "Hold treatment, address the blood-count abnormalities, and reassess before the next cycle."
   },
   "subjective": {
     "routine": "Patient presents for a scheduled outpatient follow-up.",

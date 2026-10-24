@@ -53,6 +53,13 @@
       ],
       "history_cycles": {"min": 1, "max": 2, "days_between": 21},
       "hold_probability": 0.4,
+      "history_relationships": {
+        "718-7": {
+          "direction": "higher_than_following",
+          "min_delta": 0.3,
+          "max_delta": 1.2
+        }
+      },
       "variants": [
         {
           "id": "breast",
@@ -83,6 +90,12 @@
         "2857-1": {"min": 0.5, "max": 4.0}
       },
       "current_rules": {
+        "718-7": {
+          "by_sex": {
+            "female": {"min": 9.5, "max": 12.8},
+            "male": {"min": 10.0, "max": 13.5}
+          }
+        },
         "751-8": {
           "hold": {"min": 0.5, "max": 1.4},
           "clear": {"min": 1.6, "max": 5.0}
