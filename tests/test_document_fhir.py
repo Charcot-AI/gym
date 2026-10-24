@@ -332,6 +332,107 @@ def test_synthesis_is_deterministic_and_scenario_rules_hold() -> None:
             )
 
 
+def test_generated_hematology_values_are_coupled() -> None:
+    public, private = generate_task_sets(PRIVATE_SEED)
+    for task in public + private:
+        current = {item["code"]: item["value"] for item in task["gold"]["expected"]}
+        assert ("718-7" in current) == ("4544-3" in current)
+        if "718-7" in current:
+            assert abs(current["4544-3"] - 3 * current["718-7"]) <= (
+                0.1 * 3 * current["718-7"] + 0.05
+            )
+        if "751-8" in current:
+            assert "6690-2" in current
+            assert current["751-8"] < current["6690-2"]
+            assert current["751-8"] <= 0.85 * current["6690-2"]
+
+        histories: dict[str, dict[str, float]] = {}
+        for entry in task["initial_state"]["entry"]:
+            resource = entry["resource"]
+            if resource["resourceType"] != "Observation":
+                continue
+            code = resource["code"]["coding"][0]["code"]
+            histories.setdefault(resource["effectiveDateTime"], {})[code] = resource[
+                "valueQuantity"
+            ]["value"]
+        hemoglobin_dates = {date for date, values in histories.items() if "718-7" in values}
+        hematocrit_dates = {date for date, values in histories.items() if "4544-3" in values}
+        assert hemoglobin_dates == hematocrit_dates
+        anc_dates = {date for date, values in histories.items() if "751-8" in values}
+        wbc_dates = {date for date, values in histories.items() if "6690-2" in values}
+        assert anc_dates <= wbc_dates
+        for history in histories.values():
+            if "718-7" in history:
+                assert abs(history["4544-3"] - 3 * history["718-7"]) <= (
+                    0.1 * 3 * history["718-7"] + 0.05
+                )
+            if "751-8" in history:
+                assert "6690-2" in history
+                assert history["751-8"] < history["6690-2"]
+                assert history["751-8"] <= 0.85 * history["6690-2"]
+
+
+def test_rendered_cbc_reference_ranges_follow_patient_sex() -> None:
+    public, private = generate_task_sets(PRIVATE_SEED)
+    calibration = json.loads(
+        (ROOT / "src" / "charcot_gym" / "synth" / "calibration.json").read_text(encoding="utf-8")
+    )
+    analytes = json.loads(
+        (ROOT / "src" / "charcot_gym" / "data" / "loinc_subset.json").read_text(encoding="utf-8")
+    )
+    entries_by_code = {entry["code"]: entry for entry in analytes}
+    ranges = calibration["sex_specific_reference_ranges"]
+    for task in public + private:
+        patient = next(
+            entry["resource"]
+            for entry in task["initial_state"]["entry"]
+            if entry["resource"]["resourceType"] == "Patient"
+        )
+        current_codes = {item["code"] for item in task["gold"]["expected"]}
+        document = next(
+            entry["resource"]
+            for entry in task["initial_state"]["entry"]
+            if entry["resource"]["resourceType"] == "DocumentReference"
+        )
+        report = base64.b64decode(document["content"][0]["attachment"]["data"]).decode("utf-8")
+        for code in ("718-7", "4544-3"):
+            if code not in current_codes:
+                continue
+            label = (
+                {"718-7": "Hgb", "4544-3": "Hct"}[code]
+                if task["metadata"]["layout"] == "compact_abbrev"
+                else entries_by_code[code]["display"]
+            )
+            line = next(
+                line
+                for line in report.splitlines()
+                if line.startswith(label) and "reference range" in line
+            )
+            match = re.search(r"reference range ([\d.]+)\u2013([\d.]+)", line)
+            assert match is not None
+            reference = ranges[code][patient["gender"]]
+            assert (float(match[1]), float(match[2])) == (
+                float(reference["min"]),
+                float(reference["max"]),
+            )
+
+
+def test_private_tasks_are_stratified_by_scenario() -> None:
+    public, private = generate_task_sets(PRIVATE_SEED)
+    tasks = public + private
+    assert len(public) == 42
+    assert len(private) == 18
+    counts = Counter((task["metadata"]["scenario_id"], task["split"]) for task in tasks)
+    minimum_private = json.loads(
+        (ROOT / "src" / "charcot_gym" / "synth" / "calibration.json").read_text(encoding="utf-8")
+    )["minimum_scenario_counts"]["private"]
+    scenario_ids = {task["metadata"]["scenario_id"] for task in tasks}
+    for scenario_id in scenario_ids:
+        scenario_count = counts[(scenario_id, "public")] + counts[(scenario_id, "private")]
+        expected_private = max(int(scenario_count * 0.3 + 0.5), minimum_private.get(scenario_id, 0))
+        assert counts[(scenario_id, "private")] == expected_private
+
+
 def test_report_layouts_and_task_build_check() -> None:
     public, private = generate_task_sets(PRIVATE_SEED)
 
