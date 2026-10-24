@@ -1,4 +1,4 @@
-"""Search the bundled laboratory terminology subset."""
+"""Search the bundled terminology subsets."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def terminology_search(system: str, query: str, limit: int = 10) -> list[dict[st
                     "system": entry["system"],
                     "code": entry["code"],
                     "display": entry["display"],
-                    "unit": entry["unit"],
+                    "unit": entry.get("unit", ""),
                 }
             )
     return matches[:limit]
@@ -38,10 +38,14 @@ def terminology_search(system: str, query: str, limit: int = 10) -> list[dict[st
 @lru_cache(maxsize=1)
 def _entries() -> tuple[dict[str, Any], ...]:
     """Read the bundled subset once per process."""
-    content = files("charcot_gym").joinpath("data", "loinc_subset.json").read_text(encoding="utf-8")
-    entries = json.loads(content)
-    if not isinstance(entries, list):
-        raise ValueError("terminology data must be a list")
+    data = files("charcot_gym").joinpath("data")
+    entries = []
+    for filename in ("loinc_subset.json", "icd10cm_subset.json"):
+        content = data.joinpath(filename).read_text(encoding="utf-8")
+        subset = json.loads(content)
+        if not isinstance(subset, list):
+            raise ValueError("terminology data must be a list")
+        entries.extend(subset)
     return tuple(entries)
 
 

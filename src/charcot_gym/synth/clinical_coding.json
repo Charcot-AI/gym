@@ -1,0 +1,98 @@
+{
+  "source": "default prior",
+  "layouts": {
+    "public": ["soap_full", "soap_brief"],
+    "private": ["soap_abbrev"]
+  },
+  "routine": {
+    "chronic_codes": ["I10", "E78.5", "E66.9"],
+    "code_count": {"min": 0, "max": 2},
+    "fallback_code": "Z00.00"
+  },
+  "scenario_codes": {
+    "aki": ["N17.9"],
+    "uncontrolled_diabetes": ["E11.65"],
+    "hypokalemia": ["E87.6"]
+  },
+  "oncology": {
+    "clear_codes": ["Z51.11"],
+    "hold_codes": ["Z53.09", "T45.1X5A"],
+    "anc_threshold": 1.5,
+    "anc_code": "D70.1",
+    "platelet_threshold": 100,
+    "platelet_code": "D69.59",
+    "review_note": "Requires oncologist and certified coder review."
+  },
+  "diagnosis_labels": {
+    "I10": {"soap_full": "Primary hypertension", "soap_brief": "Hypertension", "soap_abbrev": "HTN"},
+    "E78.5": {"soap_full": "Hyperlipidemia", "soap_brief": "Hyperlipidemia", "soap_abbrev": "HLD"},
+    "E66.9": {"soap_full": "Obesity", "soap_brief": "Obesity", "soap_abbrev": "Obesity"},
+    "Z00.00": {"soap_full": "Adult preventive examination", "soap_brief": "Preventive exam", "soap_abbrev": "Adult wellness exam"},
+    "N17.9": {"soap_full": "Acute kidney injury", "soap_brief": "Acute kidney injury", "soap_abbrev": "AKI"},
+    "E11.65": {"soap_full": "Type 2 diabetes mellitus with hyperglycemia", "soap_brief": "Type 2 diabetes with hyperglycemia", "soap_abbrev": "T2DM w/ hyperglycemia"},
+    "E87.6": {"soap_full": "Hypokalemia", "soap_brief": "Hypokalemia", "soap_abbrev": "HypoK"},
+    "Z51.11": {"soap_full": "Encounter for antineoplastic chemotherapy", "soap_brief": "Encounter for chemotherapy", "soap_abbrev": "Pre-chemo visit"},
+    "Z53.09": {"soap_full": "Treatment not carried out because of a contraindication", "soap_brief": "Treatment deferred for a contraindication", "soap_abbrev": "Treatment deferred"},
+    "T45.1X5A": {"soap_full": "Adverse effect of antineoplastic therapy", "soap_brief": "Antineoplastic therapy adverse effect", "soap_abbrev": "Antineoplastic drug adverse effect"},
+    "D70.1": {"soap_full": "Chemotherapy-induced neutropenia", "soap_brief": "Treatment-related neutropenia", "soap_abbrev": "Chemo-related neutropenia"},
+    "D69.59": {"soap_full": "Secondary thrombocytopenia", "soap_brief": "Treatment-related thrombocytopenia", "soap_abbrev": "Secondary thrombocytopenia"}
+  },
+  "lab_abbreviations": {
+    "2345-7": "Gluc",
+    "15074-8": "Gluc",
+    "4548-4": "HbA1c",
+    "2160-0": "Cr",
+    "3094-0": "BUN",
+    "2951-2": "Na",
+    "2823-3": "K",
+    "2093-3": "TC",
+    "2085-9": "HDL-C",
+    "13457-7": "LDL-C",
+    "2571-8": "TG",
+    "718-7": "Hgb",
+    "4544-3": "Hct",
+    "6690-2": "WBC",
+    "777-3": "PLT",
+    "3016-3": "TSH",
+    "1742-6": "ALT/SGPT",
+    "1920-8": "AST/SGOT",
+    "751-8": "ANC",
+    "2039-6": "CEA",
+    "2857-1": "PSA"
+  },
+  "plans": {
+    "routine": "Continue preventive care and routine follow-up.",
+    "aki": "Review renal function and arrange follow-up testing.",
+    "uncontrolled_diabetes": "Adjust the diabetes care plan and repeat monitoring.",
+    "hypokalemia": "Replace potassium and recheck the level.",
+    "oncology_clear": "Proceed with the planned infusion and monitor blood counts.",
+    "oncology_hold": "Hold treatment, address the blood-count abnormalities, and reassess before the next cycle."
+  },
+  "subjective": {
+    "routine": "Patient presents for a scheduled outpatient follow-up.",
+    "aki": "Patient presents for follow-up of recent renal function changes.",
+    "uncontrolled_diabetes": "Patient presents for diabetes follow-up.",
+    "hypokalemia": "Patient presents for follow-up of a low potassium result.",
+    "oncology": "Patient presents for a scheduled infusion visit; the known malignancy is already on the problem list."
+  },
+  "distractors": {
+    "count": {"min": 1, "max": 2},
+    "items": [
+      {
+        "soap_full": "Pneumonia was considered and ruled out.",
+        "soap_brief": "Pneumonia considered; ruled out.",
+        "soap_abbrev": "PNA considered; ruled out."
+      },
+      {
+        "soap_full": "History of appendectomy; no active abdominal diagnosis.",
+        "soap_brief": "Past appendectomy; resolved.",
+        "soap_abbrev": "Hx appendectomy; resolved."
+      },
+      {
+        "soap_full": "Family history includes cardiovascular disease in a first-degree relative.",
+        "soap_brief": "Family history of cardiovascular disease.",
+        "soap_abbrev": "FH: cardiovascular disease."
+      }
+    ]
+  }
+}
