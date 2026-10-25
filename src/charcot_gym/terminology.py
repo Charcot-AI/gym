@@ -18,7 +18,7 @@ CONDITION_CLINICAL_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition
 CONDITION_VERIFICATION_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-ver-status"
 CONDITION_CATEGORY_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-category"
 CLAIM_TYPE_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/claim-type"
-RELATED_CLAIM_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/related-claim-relationship"
+RELATED_CLAIM_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/ex-relatedclaimrelationship"
 OBSERVATION_CATEGORY_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/observation-category"
 V3_ACT_CODE_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/v3-ActCode"
 

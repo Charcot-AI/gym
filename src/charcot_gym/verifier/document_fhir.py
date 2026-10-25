@@ -149,6 +149,10 @@ def _document_match(
         and value == expected_value
         and quantity.get("system") == UCUM_SYSTEM_URI
         and quantity.get("code") == expected.get("unit")
+        and (
+            expected.get("comparator") is None
+            or quantity.get("comparator") == expected.get("comparator")
+        )
         and resource.get("subject", {}).get("reference") == f"Patient/{patient_id}"
         and effective == expected.get("effective")
     )
@@ -173,5 +177,9 @@ def _document_result_match(resource: Mapping[str, Any], expected: Mapping[str, A
         and value == expected_value
         and quantity.get("system") == UCUM_SYSTEM_URI
         and quantity.get("code") == expected.get("unit")
+        and (
+            expected.get("comparator") is None
+            or quantity.get("comparator") == expected.get("comparator")
+        )
         and effective == expected.get("effective")
     )

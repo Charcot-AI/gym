@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Mapping
 from typing import Any, cast
+
+from charcot_gym.synth.priors import matching_percentiles, sample_prior_value
 
 
 def _draw_value(  # noqa: PLR0913, PLR0917
@@ -13,7 +16,19 @@ def _draw_value(  # noqa: PLR0913, PLR0917
     calibration: dict[str, Any],
     sex: str,
     allow_abnormal: bool,
+    priors: Mapping[str, Any] | None = None,
 ) -> float | int:
+    if priors is not None and not allow_abnormal:
+        percentiles = matching_percentiles(priors, entry["code"], entry["unit"])
+        if percentiles is not None:
+            parameters = calibration["analyte_parameters"][entry["code"]]
+            lower = parameters["physiologic_min"]
+            upper = parameters["physiologic_max"]
+            if rule is not None:
+                range_rule = rule.get("by_sex", {}).get(sex, rule)
+                lower = max(lower, range_rule.get("min", lower))
+                upper = min(upper, range_rule.get("max", upper))
+            return sample_prior_value(rng, percentiles, lower, upper, entry["precision"])
     lower, upper = _value_bounds(entry, rule, calibration, sex, allow_abnormal)
     return _sample_value(rng, lower, upper, entry["precision"])
 
@@ -46,6 +61,7 @@ def _draw_lipid_panel(  # noqa: PLR0913, PLR0917
     calibration: dict[str, Any],
     sex: str,
     scenario: dict[str, Any],
+    priors: Mapping[str, Any] | None = None,
 ) -> dict[str, float | int]:
     config = calibration["lipid_panel"]
     codes = {
@@ -74,13 +90,25 @@ def _draw_lipid_panel(  # noqa: PLR0913, PLR0917
     }
 
     total_entry = by_code[codes["total"]]
-    total_bounds = _value_bounds(
-        total_entry,
-        rules.get(codes["total"]),
-        calibration,
-        sex,
-        _is_abnormal_allowed(total_entry, scenario, calibration),
+    total_percentiles = (
+        matching_percentiles(priors, total_entry["code"], total_entry["unit"])
+        if priors is not None
+        else None
     )
+    if total_percentiles is not None:
+        parameters = calibration["analyte_parameters"][total_entry["code"]]
+        total_bounds = (
+            max(parameters["physiologic_min"], total_percentiles["p05"]),
+            min(parameters["physiologic_max"], total_percentiles["p95"]),
+        )
+    else:
+        total_bounds = _value_bounds(
+            total_entry,
+            rules.get(codes["total"]),
+            calibration,
+            sex,
+            _is_abnormal_allowed(total_entry, scenario, calibration),
+        )
     for _ in range(10_000):
         values = {
             codes["hdl"]: _draw_value(
@@ -90,6 +118,7 @@ def _draw_lipid_panel(  # noqa: PLR0913, PLR0917
                 calibration,
                 sex,
                 _is_abnormal_allowed(by_code[codes["hdl"]], scenario, calibration),
+                priors,
             ),
             codes["triglycerides"]: _draw_value(
                 rng,
@@ -98,6 +127,7 @@ def _draw_lipid_panel(  # noqa: PLR0913, PLR0917
                 calibration,
                 sex,
                 _is_abnormal_allowed(triglycerides_entry, scenario, calibration),
+                priors,
             ),
             codes["ldl"]: _draw_value(
                 rng,
@@ -106,6 +136,7 @@ def _draw_lipid_panel(  # noqa: PLR0913, PLR0917
                 calibration,
                 sex,
                 _is_abnormal_allowed(by_code[codes["ldl"]], scenario, calibration),
+                priors,
             ),
         }
         total = (
@@ -145,12 +176,13 @@ def _reference_range(
     )
 
 
-def _enforce_cbc_coupling(
+def _enforce_cbc_coupling(  # noqa: PLR0913, PLR0917
     values: list[dict[str, Any]],
     rng: random.Random,
     calibration: dict[str, Any],
     scenario: dict[str, Any],
     sex: str,
+    priors: Mapping[str, Any] | None = None,
 ) -> None:
     by_code = {item["entry"]["code"]: item for item in values}
     abnormal_analytes = set(scenario.get("abnormal_analytes", []))
@@ -162,16 +194,8 @@ def _enforce_cbc_coupling(
         hct_entry = hct_item["entry"]
         hct_parameters = calibration["analyte_parameters"][hct_entry["code"]]
         factor_rule = calibration["hematology_coupling"]["hematocrit_factor"]
-        hgb_range = (
-            {"min": hgb_parameters["physiologic_min"], "max": hgb_parameters["physiologic_max"]}
-            if _is_abnormal_allowed(hgb_entry, scenario, calibration)
-            else _reference_range(hgb_entry, sex, calibration)
-        )
-        hct_range = (
-            {"min": hct_parameters["physiologic_min"], "max": hct_parameters["physiologic_max"]}
-            if _is_abnormal_allowed(hct_entry, scenario, calibration)
-            else _reference_range(hct_entry, sex, calibration)
-        )
+        hgb_range = _coupling_range(hgb_entry, hgb_parameters, scenario, sex, calibration, priors)
+        hct_range = _coupling_range(hct_entry, hct_parameters, scenario, sex, calibration, priors)
         hgb_min = max(hgb_range["min"], hgb_parameters["physiologic_min"])
         hgb_max = min(hgb_range["max"], hgb_parameters["physiologic_max"])
         hct_min = max(hct_range["min"], hct_parameters["physiologic_min"])
@@ -181,9 +205,19 @@ def _enforce_cbc_coupling(
         if feasible_hgb_min > feasible_hgb_max:
             raise ValueError("No valid coupled hemoglobin and hematocrit interval.")
         if not feasible_hgb_min <= hgb_item["value"] <= feasible_hgb_max:
-            hgb_item["value"] = _sample_value(
-                rng, feasible_hgb_min, feasible_hgb_max, hgb_entry["precision"]
+            percentiles = (
+                matching_percentiles(priors, hgb_entry["code"], hgb_entry["unit"])
+                if priors is not None and not _is_abnormal_allowed(hgb_entry, scenario, calibration)
+                else None
             )
+            if percentiles is None:
+                hgb_item["value"] = _sample_value(
+                    rng, feasible_hgb_min, feasible_hgb_max, hgb_entry["precision"]
+                )
+            else:
+                hgb_item["value"] = sample_prior_value(
+                    rng, percentiles, feasible_hgb_min, feasible_hgb_max, hgb_entry["precision"]
+                )
         factor_min = max(factor_rule["min"], hct_min / hgb_item["value"])
         factor_max = min(factor_rule["max"], hct_max / hgb_item["value"])
         for _ in range(10_000):
@@ -204,6 +238,29 @@ def _enforce_cbc_coupling(
     fraction_rule = calibration["hematology_coupling"]["neutrophil_fraction"]
     fraction = rng.uniform(fraction_rule["min"], fraction_rule["max"])
     wbc_item["value"] = _round_value(anc / fraction, wbc_entry["precision"])
+
+
+def _coupling_range(  # noqa: PLR0913, PLR0917
+    entry: dict[str, Any],
+    parameters: dict[str, Any],
+    scenario: dict[str, Any],
+    sex: str,
+    calibration: dict[str, Any],
+    priors: Mapping[str, Any] | None,
+) -> dict[str, float]:
+    if _is_abnormal_allowed(entry, scenario, calibration):
+        return {
+            "min": parameters["physiologic_min"],
+            "max": parameters["physiologic_max"],
+        }
+    if priors is not None:
+        percentiles = matching_percentiles(priors, entry["code"], entry["unit"])
+        if percentiles is not None:
+            return {
+                "min": max(parameters["physiologic_min"], percentiles["p05"]),
+                "max": min(parameters["physiologic_max"], percentiles["p95"]),
+            }
+    return _reference_range(entry, sex, calibration)
 
 
 def _format_value(value: float | int, precision: int) -> str:
