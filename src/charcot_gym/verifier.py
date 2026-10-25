@@ -708,9 +708,9 @@ class ClaimsVerifier:
                             else f"{modifier} lines differ.",
                         )
                     )
-            for code in ("J9171", "J0897", "J2405"):
-                name = f"diagnosis_link_{code}"
-                if name in critical_names:
+            for name in sorted(critical_names):
+                if name.startswith("diagnosis_link_"):
+                    code = name.removeprefix("diagnosis_link_")
                     check_passed = _diagnosis_links_match_code(
                         claim, expected, code, hcpcs_system_aliases
                     )
