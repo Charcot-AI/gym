@@ -10,12 +10,9 @@
     "synonyms": [
       "glucose",
       "Gluc",
-      "FBG",
-      "fasting blood glucose",
+      "GLU",
       "blood sugar",
-      "Glucose, serum",
-      "Fasting glucose",
-      "Glucose, fasting"
+      "Glucose, serum"
     ]
   },
   {
@@ -26,7 +23,17 @@
     "reference_range": {"min": 3.9, "max": 5.5},
     "precision": 1,
     "panel": "POC glucose",
-    "synonyms": ["glucose", "Gluc", "POC glucose", "point of care glucose"]
+    "synonyms": ["Gluc", "POC glucose", "point of care glucose"]
+  },
+  {
+    "system": "http://loinc.org",
+    "code": "1558-6",
+    "display": "Fasting glucose [Mass/volume] in Serum or Plasma",
+    "unit": "mg/dL",
+    "reference_range": {"min": 70, "max": 99},
+    "precision": 0,
+    "panel": null,
+    "synonyms": ["Fasting glucose", "Glucose, fasting", "Fasting blood glucose", "FBG"]
   },
   {
     "system": "http://loinc.org",
@@ -243,17 +250,30 @@
   {
     "system": "http://loinc.org",
     "code": "33914-3",
-    "display": "Glomerular filtration rate/1.73 sq M.predicted",
+    "display": "Glomerular filtration rate [Volume Rate/Area] in Serum or Plasma by Creatinine-based formula (MDRD)/1.73 sq M",
     "unit": "mL/min/{1.73_m2}",
     "reference_range": {"min": 1, "max": 200},
     "precision": 1,
     "panel": "eGFR",
     "synonyms": [
-      "eGFR",
-      "estimated glomerular filtration rate",
       "33914-3",
+      "eGFR (MDRD)",
+      "GFR (MDRD)"
+    ]
+  },
+  {
+    "system": "http://loinc.org",
+    "code": "98979-8",
+    "display": "Glomerular filtration rate [Volume Rate/Area] in Serum, Plasma or Blood by Creatinine-based formula (CKD-EPI 2021)/1.73 sq M",
+    "unit": "mL/min/{1.73_m2}",
+    "reference_range": {"min": 1, "max": 200},
+    "precision": 1,
+    "panel": "eGFR",
+    "synonyms": [
       "eGFR (CKD-EPI 2021)",
-      "Estimated GFR"
+      "eGFR",
+      "Estimated GFR",
+      "eGFRcr SerPlBld CKD-EPI 2021"
     ]
   }
 ]

@@ -13,14 +13,22 @@ TOKEN_PATTERN = re.compile(r"[\w*]+(?:[-/][\w*]+)*", re.UNICODE)
 
 
 def terminology_search(system: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
-    """Return terminology entries whose display or synonyms contain query tokens."""
+    """Prefer exact synonym matches, then search display and synonym tokens."""
     if limit < 1:
         raise ValueError("limit must be a positive integer")
     query_tokens = _tokens(query)
     if not query_tokens:
         return []
+    entries = _entries()
+    exact_matches = [
+        entry
+        for entry in entries
+        if entry["system"] == system
+        and any(synonym.casefold() == query.strip().casefold() for synonym in entry["synonyms"])
+    ]
+    search_entries = exact_matches or entries
     matches = []
-    for entry in _entries():
+    for entry in search_entries:
         if entry["system"] != system:
             continue
         searchable = " ".join([entry["display"], *entry["synonyms"]])
