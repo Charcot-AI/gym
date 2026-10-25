@@ -18,5 +18,6 @@ uv run mypy src
 uv run pytest
 uv run python scripts/maintenance.py check
 uv run python scripts/maintenance.py tasks --check
+uv run python scripts/maintenance.py report --check
 uv build
 ```
