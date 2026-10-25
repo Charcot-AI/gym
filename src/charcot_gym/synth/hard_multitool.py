@@ -160,6 +160,22 @@ def _prepare_claims_task(task: dict[str, Any]) -> None:
                         match = re.search(r"covers (\d+) J9171 units", text)
                         if match:
                             auth[-1]["authorized_units"] = int(match.group(1))
+                        balance = re.search(
+                            r"has (\d+) approved J9171 units; prior paid claims used "
+                            r"(\d+) and (\d+) J9171 units",
+                            text,
+                        )
+                        if balance:
+                            auth[-1]["authorized_units"] = int(balance.group(1))
+                            auth[-1]["approved_units"] = int(balance.group(1))
+                            auth[-1]["prior_paid_claims"] = [
+                                {
+                                    "claim_id": f"prior-paid-{index}",
+                                    "used_units": int(units),
+                                    "status": "paid",
+                                }
+                                for index, units in enumerate(balance.groups()[1:], 1)
+                            ]
             else:
                 source = {
                     "Remittance advice": "payer",

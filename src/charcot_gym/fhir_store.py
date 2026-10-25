@@ -18,6 +18,7 @@ SUPPORTED_TYPES = {
     "MedicationAdministration",
     "ClaimResponse",
     "Claim",
+    "Task",
 }
 REFERENCE_PATTERN = re.compile(r"^([A-Z][A-Za-z]+)/([A-Za-z0-9.-]{1,64})$")
 REQUIRED_FIELDS = {
@@ -31,6 +32,7 @@ REQUIRED_FIELDS = {
     "MedicationAdministration": ("status", "medication", "subject"),
     "ClaimResponse": ("status", "type", "use", "patient", "outcome"),
     "Claim": ("status", "type", "use", "patient"),
+    "Task": ("status", "intent"),
 }
 PATIENT_REFERENCE_FIELDS = {
     "Observation": "subject",
@@ -41,6 +43,7 @@ PATIENT_REFERENCE_FIELDS = {
     "Coverage": "beneficiary",
     "Claim": "patient",
     "ClaimResponse": "patient",
+    "Task": "for",
 }
 SUBJECT_SEARCH_TYPES = {
     "Observation",

@@ -7,7 +7,13 @@ import random
 from datetime import date, timedelta
 from typing import Any
 
-CKD_PACKS = {"dm_ckd", "htn_ckd", "htn_ckd_presumption", "dm_htn_ckd"}
+CKD_PACKS = {
+    "ckd_stage_not_documented",
+    "dm_ckd",
+    "htn_ckd",
+    "htn_ckd_presumption",
+    "dm_htn_ckd",
+}
 LAYOUTS = ("problem_soap", "dictated", "ehr_template")
 PHRASING_POOLS: dict[str, list[str]] = {
     "E11.22": [
@@ -63,6 +69,29 @@ PHRASING_POOLS: dict[str, list[str]] = {
         "CKD stage 4 (eGFR {egfr} on {lab_date}; prior {prior_egfr} on {prior_date})",
         "stage 4 CKD with Cr {creatinine} and eGFR {egfr} ({lab_date})",
         "CKD G4; eGFR {egfr} on {lab_date}, previously {prior_egfr} ({prior_date})",
+    ],
+    "N18.9": [
+        "CKD is documented; the provider has not stated a stage",
+        "Chronic renal disease is on the chart; no stage is recorded",
+        "CKD is noted without a provider-assigned stage",
+    ],
+    "N18.1": ["CKD stage 1 is documented", "Stage 1 CKD noted", "CKD G1 is documented"],
+    "N18.3": ["CKD stage 3 is documented", "Stage 3 CKD noted", "CKD G3 is documented"],
+    "N18.5": ["CKD stage 5 is documented", "Stage 5 CKD noted", "CKD G5 is documented"],
+    "N18.6": [
+        "End-stage renal disease is documented",
+        "ESRD is documented",
+        "CKD G5D is documented",
+    ],
+    "S52.501A": [
+        "Right wrist fracture remains under active treatment after transfer of care.",
+        "Right wrist fracture evaluated today; active treatment continues.",
+        "Active treatment is underway for the right wrist fracture.",
+    ],
+    "S52.501D": [
+        "Right wrist fracture is healing routinely; cast check today.",
+        "Routine healing noted at the right wrist fracture follow-up.",
+        "Right wrist fracture follow-up; recovery is proceeding routinely.",
     ],
     "N17.9": [
         "AKI recurred after a prior resolved episode",
@@ -173,15 +202,21 @@ def _render_note(  # noqa: PLR0913, PLR0917
     if has_ckd:
         stage_code = details.get("stage_code")
         stage = labs.get("stage") or "3b"
-        ckd_phrase = _phrase(
-            stage_code or "N18.32",
-            rng,
-            stage=stage,
-            egfr=_value(labs, "98979-8"),
-            creatinine=_value(labs, "2160-0"),
-            prior_egfr=labs.get("prior_egfr", "—"),
-            prior_date=labs.get("prior_egfr_date", "prior"),
-            lab_date=labs.get("latest", {}).get("98979-8", {}).get("effectiveDateTime", "prior"),
+        ckd_phrase = (
+            _phrase("N18.9", rng)
+            if "ckd_stage_not_documented" in packs
+            else _phrase(
+                stage_code or "N18.32",
+                rng,
+                stage=stage,
+                egfr=_value(labs, "98979-8"),
+                creatinine=_value(labs, "2160-0"),
+                prior_egfr=labs.get("prior_egfr", "—"),
+                prior_date=labs.get("prior_egfr_date", "prior"),
+                lab_date=labs.get("latest", {})
+                .get("98979-8", {})
+                .get("effectiveDateTime", "prior"),
+            )
         )
         if has_diabetes:
             dm_phrase = _phrase("E11.22", rng)
@@ -208,6 +243,8 @@ def _render_note(  # noqa: PLR0913, PLR0917
             if dm_phrase:
                 line += f" — {_medication_plan(labs.get('medication_class'))}."
                 lines.append(line)
+        elif "ckd_stage_not_documented" in packs:
+            lines.append(ckd_phrase)
         if "htn_heart_ckd" in packs:
             lines.append(
                 f"Hypertension at goal; BP {bp[0]}/{bp[1]} mmHg; continue lisinopril 20 mg daily."
@@ -219,7 +256,7 @@ def _render_note(  # noqa: PLR0913, PLR0917
                 f"Hypertension at goal; BP {bp[0]}/{bp[1]} — continue lisinopril 20 mg daily."
             )
             lines.append(f"{ckd_phrase}; renal function stable.")
-        elif not has_diabetes:
+        elif not has_diabetes and "ckd_stage_not_documented" not in packs:
             lines.append(f"{_phrase('I12.9', rng)}; {ckd_phrase} — lisinopril 20 mg daily.")
     elif has_diabetes:
         symptom = details.get("symptom")
@@ -269,6 +306,12 @@ def _render_note(  # noqa: PLR0913, PLR0917
     if "stroke_sequela" in packs:
         code = "I69.351" if details["stroke_sequela_residual"] else "Z86.73"
         lines.append("Right-handed; " + _phrase(code, rng) + ".")
+    if "injury_7th_character_healing" in packs:
+        lines.append(_phrase("S52.501D", rng))
+    if "injury_7th_character_active" in packs:
+        lines.append(_phrase("S52.501A", rng))
+    if "diabetes_excludes1" in packs:
+        lines.append("Type 2 DM; taking metformin by mouth.")
     addendum = None
     if "uncertain_dx" in packs:
         lines.append("Cough with probable PNA; CXR ordered and pending. Supportive care reviewed.")

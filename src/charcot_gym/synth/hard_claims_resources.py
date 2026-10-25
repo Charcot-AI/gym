@@ -126,6 +126,9 @@ def _claim(
         "item": items,
         "total": {"value": float(total), "currency": "USD"},
     }
+    dates = sorted({item_date.isoformat() for _administration, item_date in prior_items})
+    if len(dates) > 1:
+        claim["billablePeriod"] = {"start": dates[0], "end": dates[-1]}
     if preauth_ref and use == "claim":
         claim["insurance"][0]["preAuthRef"] = [preauth_ref]
     return claim
