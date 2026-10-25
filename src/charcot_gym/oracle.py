@@ -203,7 +203,6 @@ def _observations(task: Task) -> list[dict[str, Any]]:
                     {
                         "system": "http://loinc.org",
                         "code": item["code"],
-                        "display": item["code"],
                     }
                 ]
             },
