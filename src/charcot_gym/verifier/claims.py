@@ -422,7 +422,6 @@ def _modifier_lines_match(
                     for coding in entry.get("coding", [])
                 )
             ),
-            tuple(item.get("diagnosisSequence", [])),
         )
 
     actual = sorted(
@@ -477,7 +476,6 @@ def _denial_error_fixed(
                     _product_code(item, systems),
                     item.get("quantity", {}).get("value"),
                     item.get("servicedDate"),
-                    tuple(item.get("diagnosisSequence", [])),
                     tuple(
                         sorted(
                             coding["code"]

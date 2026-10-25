@@ -105,6 +105,7 @@ def evaluate(  # noqa: PLR0913
             "difficulty": difficulty,
             "modality": modality,
             "model": config.model,
+            "max_tokens": config.max_tokens,
             "incomplete": launched < len(tasks) * attempts,
             "launched_episode_count": launched,
         }
