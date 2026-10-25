@@ -422,11 +422,9 @@ def test_private_keep_episodes_writes_only_safe_record_fields(tmp_path: Path) ->
     assert "trajectory" not in artifacts
 
 
-def test_submission_command_backfills_legacy_run_without_overwriting(
-    tmp_path: Path, capsys: Any
-) -> None:
+def test_submission_command_backfills_run_without_overwriting(tmp_path: Path, capsys: Any) -> None:
     task = task_for("clinical_coding")
-    run_dir = tmp_path / "legacy-run"
+    run_dir = tmp_path / "backfilled-run"
     evaluate(
         [task],
         ModelConfig(model="openai/backfilled"),
@@ -472,7 +470,7 @@ def test_submission_command_backfills_legacy_run_without_overwriting(
     assert all((run_dir / path).read_bytes() == content for path, content in previous_files.items())
     result = build_leaderboard(
         [run_dir],
-        tmp_path / "legacy-leaderboard",
+        tmp_path / "backfilled-leaderboard",
         split="public",
         updated="2026-10-25",
     )
