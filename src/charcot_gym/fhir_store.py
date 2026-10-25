@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 SUPPORTED_TYPES = {
@@ -48,6 +49,33 @@ SUBJECT_SEARCH_TYPES = {
     "DocumentReference",
     "MedicationAdministration",
 }
+DATE_FIELDS = {
+    "Observation": (("effectiveDateTime",),),
+    "Encounter": (("actualPeriod", "start"),),
+    "Condition": (("recordedDate",),),
+    "DocumentReference": (("date",),),
+    "MedicationAdministration": (
+        ("occurenceDateTime",),
+        ("occurrenceDateTime",),
+        ("effectiveDateTime",),
+    ),
+    "Claim": (("created",),),
+}
+SUPPORTED_SEARCH_PARAMETERS = {
+    "subject",
+    "patient",
+    "code",
+    "date",
+    "status",
+    "clinical-status",
+    "encounter",
+    "_sort",
+    "_count",
+}
+DATE_FILTER_PATTERN = re.compile(
+    r"^(?:(eq|ge|le|gt|lt))?(\d{4}-\d{2}-\d{2})"
+    r"(?:T(\d{2}:\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})?)?$"
+)
 
 
 class FHIRStore:
@@ -95,13 +123,25 @@ class FHIRStore:
         if resource_type not in SUPPORTED_TYPES:
             raise ValueError(f"unsupported FHIR resource type: {resource_type}")
         filters = {
-            name: value
-            for name, value in (params or {}).items()
-            if not (isinstance(value, str) and value == "")
+            name: value for name, value in (params or {}).items() if not _empty_filter(value)
         }
-        invalid_params = set(filters) - {"subject", "patient", "code"}
+        invalid_params = set(filters) - SUPPORTED_SEARCH_PARAMETERS
         if invalid_params:
-            raise ValueError(f"unsupported search parameter: {sorted(invalid_params)[0]}")
+            name = sorted(invalid_params)[0]
+            supported = ", ".join(sorted(SUPPORTED_SEARCH_PARAMETERS))
+            raise ValueError(
+                f"OperationOutcome: unsupported search parameter {name!r}. "
+                f"Supported parameters: {supported}."
+            )
+        sort_value = filters.pop("_sort", None)
+        if sort_value not in {None, "date", "-date"}:
+            raise ValueError("_sort must be either 'date' or '-date'.")
+        count = filters.pop("_count", None)
+        if count is not None and (
+            not isinstance(count, int) or isinstance(count, bool) or count < 0
+        ):
+            raise ValueError("_count must be a non-negative integer.")
+
         results = []
         for (kind, _), resource in sorted(self._resources.items()):
             if kind != resource_type:
@@ -111,6 +151,10 @@ class FHIRStore:
                 for name, value in filters.items()
             ):
                 results.append(deepcopy(resource))
+        if sort_value is not None:
+            results = _sort_by_date(results, resource_type, descending=sort_value == "-date")
+        if count is not None:
+            results = results[:count]
         return results
 
     def read(self, resource_type: str, resource_id: str) -> dict[str, Any]:
@@ -194,15 +238,137 @@ class FHIRStore:
         if name == "patient":
             field = PATIENT_REFERENCE_FIELDS.get(resource_type)
             return field is not None and _reference_matches(resource.get(field), value)
-        return _contains_code(resource, value)
+        if name == "code":
+            return _contains_code(resource, value)
+        if name == "status":
+            return bool(resource.get("status") == value)
+        if name == "clinical-status":
+            return resource_type == "Condition" and _contains_code(
+                resource.get("clinicalStatus"), value
+            )
+        if name == "encounter":
+            return _contains_encounter_reference(resource, value)
+        if name == "date":
+            date_values = value if isinstance(value, list) else [value]
+            return bool(date_values) and all(
+                _matches_date(resource_type, resource, item) for item in date_values
+            )
+        return False
 
 
-def _reference_matches(value: Any, query: Any) -> bool:
+def _empty_filter(value: Any) -> bool:
+    return value == "" or (isinstance(value, list) and not [item for item in value if item != ""])
+
+
+def _reference_matches(value: Any, query: Any, resource_type: str = "Patient") -> bool:
     reference = value.get("reference") if isinstance(value, dict) else None
     if not isinstance(reference, str) or not isinstance(query, str):
         return False
-    expected = query if "/" in query else f"Patient/{query}"
+    expected = query if "/" in query else f"{resource_type}/{query}"
     return reference == expected
+
+
+def _contains_encounter_reference(value: Any, query: Any) -> bool:
+    if isinstance(value, dict):
+        return any(
+            (
+                _encounter_reference_matches(item, query)
+                if key == "encounter"
+                else _contains_encounter_reference(item, query)
+            )
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_encounter_reference(item, query) for item in value)
+    return False
+
+
+def _encounter_reference_matches(value: Any, query: Any) -> bool:
+    if isinstance(value, list):
+        return any(_reference_matches(item, query, "Encounter") for item in value)
+    return _reference_matches(value, query, "Encounter")
+
+
+def _matches_date(resource_type: str, resource: dict[str, Any], query: Any) -> bool:
+    if not isinstance(query, str):
+        raise ValueError("date filters must be strings.")
+    match = DATE_FILTER_PATTERN.fullmatch(query)
+    if match is None:
+        raise ValueError(
+            f"invalid date filter {query!r}; expected [eq|ge|le|gt|lt]YYYY-MM-DD"
+            " or a second-precision dateTime."
+        )
+    prefix = match.group(1) or "eq"
+    query_date = date.fromisoformat(match.group(2))
+    query_time = match.group(3)
+    if query_time is None:
+        lower = datetime.combine(query_date, time.min, tzinfo=UTC)
+        upper = lower + timedelta(days=1)
+    else:
+        zone = match.group(4) or "Z"
+        datetime_text = f"{match.group(2)}T{query_time}{zone.replace('Z', '+00:00')}"
+        lower = datetime.fromisoformat(datetime_text).astimezone(UTC)
+        upper = lower + timedelta(seconds=1)
+
+    resource_date = _resource_date(resource_type, resource)
+    if resource_date is None:
+        return False
+    actual = _parse_resource_datetime(resource_date)
+    if actual is None:
+        return False
+    if prefix == "eq":
+        return lower <= actual < upper
+    if prefix == "ge":
+        return actual >= lower
+    if prefix == "le":
+        return actual < upper
+    if prefix == "gt":
+        return actual >= upper
+    return actual < lower
+
+
+def _resource_date(resource_type: str, resource: dict[str, Any]) -> Any:
+    for path in DATE_FIELDS.get(resource_type, ()):
+        value: Any = resource
+        for key in path:
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _parse_resource_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            parsed = datetime.combine(date.fromisoformat(value), time.min, tzinfo=UTC)
+        else:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except ValueError:
+        return None
+
+
+def _sort_by_date(
+    resources: list[dict[str, Any]], resource_type: str, *, descending: bool
+) -> list[dict[str, Any]]:
+    dated: list[tuple[datetime, dict[str, Any]]] = []
+    undated: list[dict[str, Any]] = []
+    for resource in resources:
+        parsed = _parse_resource_datetime(_resource_date(resource_type, resource))
+        if parsed is None:
+            undated.append(resource)
+        else:
+            dated.append((parsed, resource))
+    dated.sort(key=lambda pair: pair[0], reverse=descending)
+    undated.sort(key=lambda resource: str(resource.get("id", "")))
+    return [resource for _, resource in dated] + undated
 
 
 def _has_code(value: Any) -> bool:

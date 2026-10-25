@@ -304,6 +304,187 @@ def test_fhir_search_matches_code_with_system() -> None:
     assert not store.search("Condition", {"code": f"http://example.org|{coding['code']}"})
 
 
+def _date_search_store() -> FHIRStore:
+    patient_id = "patient-date"
+    encounter_id = "encounter-date"
+    resources = [
+        {"resourceType": "Patient", "id": patient_id},
+        {
+            "resourceType": "Encounter",
+            "id": encounter_id,
+            "status": "completed",
+            "class": [],
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "actualPeriod": {"start": "2025-01-01"},
+        },
+        {
+            "resourceType": "Condition",
+            "id": "condition-date",
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "encounter": {"reference": f"Encounter/{encounter_id}"},
+            "recordedDate": "2025-01-02",
+            "clinicalStatus": {
+                "coding": [
+                    {
+                        "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+                        "code": "active",
+                    }
+                ]
+            },
+            "code": {"coding": [{"system": "http://example.org", "code": "cond"}]},
+        },
+        {
+            "resourceType": "DocumentReference",
+            "id": "document-date",
+            "status": "current",
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "date": "2025-01-03",
+            "context": {"encounter": [{"reference": f"Encounter/{encounter_id}"}]},
+            "content": [{"attachment": {"contentType": "text/plain"}}],
+        },
+        {
+            "resourceType": "MedicationAdministration",
+            "id": "medication-date",
+            "status": "completed",
+            "medication": {"concept": {"coding": []}},
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "encounter": {"reference": f"Encounter/{encounter_id}"},
+            "occurenceDateTime": "2025-01-04",
+        },
+        {
+            "resourceType": "Claim",
+            "id": "claim-date",
+            "status": "active",
+            "type": {},
+            "use": "claim",
+            "patient": {"reference": f"Patient/{patient_id}"},
+            "created": "2025-01-05",
+        },
+        {
+            "resourceType": "Observation",
+            "id": "observation-date-1",
+            "status": "final",
+            "code": {"coding": [{"system": "http://loinc.org", "code": "a"}]},
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "encounter": {"reference": f"Encounter/{encounter_id}"},
+            "effectiveDateTime": "2025-01-06T12:30:00Z",
+            "valueQuantity": {"value": 1},
+        },
+        {
+            "resourceType": "Observation",
+            "id": "observation-date-2",
+            "status": "final",
+            "code": {"coding": [{"system": "http://loinc.org", "code": "b"}]},
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "encounter": {"reference": f"Encounter/{encounter_id}"},
+            "effectiveDateTime": "2025-01-08T08:00:00Z",
+            "valueQuantity": {"value": 2},
+        },
+    ]
+    return FHIRStore(
+        {"resourceType": "Bundle", "entry": [{"resource": resource} for resource in resources]}
+    )
+
+
+@pytest.mark.parametrize(
+    ("resource_type", "date_filter"),
+    [
+        ("Encounter", "2025-01-01"),
+        ("Condition", "2025-01-02"),
+        ("DocumentReference", "2025-01-03"),
+        ("MedicationAdministration", "2025-01-04"),
+        ("Claim", "2025-01-05"),
+        ("Observation", "2025-01-06T12:30:00Z"),
+    ],
+)
+def test_fhir_search_matches_resource_specific_date_fields(
+    resource_type: str, date_filter: str
+) -> None:
+    resources = _date_search_store().search(resource_type, {"date": date_filter})
+    assert len(resources) == 1
+
+
+@pytest.mark.parametrize(
+    ("date_filter", "expected_ids"),
+    [
+        ("2025-01-06", ["observation-date-1"]),
+        ("ge2025-01-07", ["observation-date-2"]),
+        ("le2025-01-06", ["observation-date-1"]),
+        ("gt2025-01-06", ["observation-date-2"]),
+        ("lt2025-01-08", ["observation-date-1"]),
+        ("eq2025-01-06T12:30:00Z", ["observation-date-1"]),
+    ],
+)
+def test_fhir_search_date_prefixes_and_second_precision(
+    date_filter: str, expected_ids: list[str]
+) -> None:
+    resources = _date_search_store().search("Observation", {"date": date_filter})
+    assert [resource["id"] for resource in resources] == expected_ids
+
+
+def test_fhir_search_ands_repeated_dates_and_sorts_before_count() -> None:
+    store = _date_search_store()
+    assert [
+        resource["id"]
+        for resource in store.search("Observation", {"date": ["ge2025-01-06", "le2025-01-06"]})
+    ] == ["observation-date-1"]
+    assert [
+        resource["id"] for resource in store.search("Observation", {"_sort": "-date", "_count": 1})
+    ] == ["observation-date-2"]
+    assert [resource["id"] for resource in store.search("Observation", {"_sort": "date"})] == [
+        "observation-date-1",
+        "observation-date-2",
+    ]
+
+
+def test_fhir_search_supports_status_clinical_status_and_encounter() -> None:
+    store = _date_search_store()
+    assert [item["id"] for item in store.search("Observation", {"status": "final"})] == [
+        "observation-date-1",
+        "observation-date-2",
+    ]
+    assert [item["id"] for item in store.search("Condition", {"clinical-status": "active"})] == [
+        "condition-date"
+    ]
+    assert store.search("Observation", {"encounter": "encounter-date"})
+    assert store.search("DocumentReference", {"encounter": "Encounter/encounter-date"})
+
+
+def test_unknown_search_parameter_returns_operation_outcome_error() -> None:
+    environment = ClinicalEnv([task_by_id("smoke-search-first")])
+    environment.reset("smoke-search-first")
+
+    result = environment.step(
+        ToolCall(
+            name="fhir_search",
+            arguments={"resource_type": "Observation", "params": {"unknown": "value"}},
+        )
+    )
+
+    assert result.observation.result["error"].startswith(
+        "OperationOutcome: unsupported search parameter 'unknown'."
+    )
+    assert "clinical-status" in result.observation.result["error"]
+
+
+def test_fhir_search_schema_includes_longitudinal_parameters() -> None:
+    environment = ClinicalEnv([task_by_id("smoke-search-first")])
+    observation = environment.reset("smoke-search-first")
+    schema = next(
+        item["function"] for item in observation.tools if item["function"]["name"] == "fhir_search"
+    )
+    parameters = schema["parameters"]["properties"]["params"]
+    assert {
+        "date",
+        "status",
+        "clinical-status",
+        "encounter",
+        "_sort",
+        "_count",
+    } <= set(parameters["properties"])
+    assert parameters["additionalProperties"] is True
+
+
 def test_max_steps_ends_episode_without_submission() -> None:
     task = task_by_id("smoke-weight")
     values = task.model_dump(mode="json")
@@ -354,6 +535,7 @@ def test_search_must_precede_the_first_create_action() -> None:
 def test_public_task_view_and_cli_never_emit_gold(capsys: pytest.CaptureFixture[str]) -> None:
     task = task_by_id("smoke-weight")
     assert "gold" not in task.public_view()
+    assert task.public_view()["difficulty"] == "standard"
     assert task.public_view()["review"] == {
         "status": "unreviewed",
         "reviewer": None,
