@@ -14,6 +14,9 @@ from charcot_gym.synth.generator import generate_task_sets
 
 HERE = Path(__file__).parent
 PACKAGE = HERE.parent
+CLAIM_REQUIREMENTS = json.loads((HERE / "claims.json").read_text(encoding="utf-8"))["prompts"][
+    "requirements"
+]
 SPLIT_COUNTS = {
     "public": {
         "routine": 5,
@@ -261,12 +264,7 @@ def _convert_task(  # noqa: PLR0913, PLR0917
     task["id"] = task_id
     task["verifier"] = "claims"
     task["tools"] = list(dict.fromkeys([*task["tools"], "healthplan_rules"]))
-    task["prompt"] = (
-        f"Prepare a {task_type.replace('_', ' ')} for the encounter. Use HCPCS Level II codes, "
-        "the healthplan rules, administered doses, and the clinical record. Create exactly one "
-        "Claim. For a correction, leave the draft and denial untouched and link the corrected "
-        "Claim to the draft as a prior claim."
-    )
+    task["prompt"] = f"{config['prompts'][task_type]} {CLAIM_REQUIREMENTS}"
     task["review"] = {
         "status": "unreviewed",
         "notes": config["oncology_review_note"]

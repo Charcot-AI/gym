@@ -79,10 +79,6 @@ def summarize_episodes(
     families = {
         family: _group_summary(group, attempts) for family, group in sorted(family_episodes.items())
     }
-    scenarios = {
-        f"{family}/{scenario}": _group_summary(group, attempts)
-        for (family, scenario), group in sorted(scenario_episodes.items())
-    }
     task_scores: dict[str, list[float]] = defaultdict(list)
     for (family, _, _), task_episodes in sorted(task_groups.items()):
         scores = [float(item["score"]) for item in task_episodes if item.get("score") is not None]
@@ -107,11 +103,14 @@ def summarize_episodes(
     result: dict[str, Any] = {
         "overall": overall,
         "families": families,
-        "scenarios": scenarios,
-        "attempts": attempts,
-        "private": private,
     }
     if not private:
+        result["attempts"] = attempts
+        result["private"] = False
+        result["scenarios"] = {
+            f"{family}/{scenario}": _group_summary(group, attempts)
+            for (family, scenario), group in sorted(scenario_episodes.items())
+        }
         categories: Counter[str] = Counter()
         for episode in episodes:
             categories.update(classify_failed_checks(episode.get("checks", [])))

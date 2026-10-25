@@ -360,7 +360,7 @@ def _generate_split(
                     data.coding,
                 )
             )
-        patient_id = f"patient-{task_family.replace('_', '-')}-{split[0]}-{index + 1:03d}"
+        patient_id = f"patient-{split[0]}-{index + 1:03d}"
         given, family = NAMES[index % len(NAMES)]
         age = rng.randint(calibration["age_range"]["min"], calibration["age_range"]["max"])
         birth_date = collection_date - timedelta(days=age * 365)
@@ -481,10 +481,7 @@ def _generate_split(
                     resource["id"] for resource in [*preexisting_resources, document]
                 ],
             }
-            prompt = (
-                "Record each diagnosis addressed at this visit that is not already on the "
-                "patient's problem list as a Condition coded in ICD-10-CM."
-            )
+            prompt = data.coding["prompt"]
             review = {"status": "unreviewed"}
             if oncology:
                 review["notes"] = data.coding["oncology"]["review_note"]
@@ -502,10 +499,7 @@ def _generate_split(
                     ]
                 ],
             }
-            prompt = (
-                "Record every current result in the attached report as a FHIR Observation "
-                "for the patient."
-            )
+            prompt = data.calibration["document_prompt"]
             review = None
         tasks.append(
             {

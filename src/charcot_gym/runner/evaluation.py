@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
+import secrets
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
@@ -32,6 +34,7 @@ def evaluate(  # noqa: PLR0913
     output = Path(out_dir)
     output.mkdir(parents=True, exist_ok=True)
     private = split == "private"
+    private_key = secrets.token_bytes(32) if private else b""
     trajectory_dir = output / "trajectories"
     if private and trajectory_dir.exists():
         raise ValueError("private runs cannot write into a directory with trajectories")
@@ -63,7 +66,12 @@ def evaluate(  # noqa: PLR0913
                 results.append(result)
                 spend += result.cost_usd
     episodes = [
-        _episode_record(result, private=private, trajectory_dir=trajectory_dir)
+        _episode_record(
+            result,
+            private=private,
+            private_key=private_key,
+            trajectory_dir=trajectory_dir,
+        )
         for result in results
     ]
     episodes.sort(key=lambda item: (item.get("task_id", item["task_id_hash"]), item["attempt"]))
@@ -71,7 +79,9 @@ def evaluate(  # noqa: PLR0913
         "".join(json.dumps(item, sort_keys=True, ensure_ascii=False) + "\n" for item in episodes),
         encoding="utf-8",
     )
-    internal_records = [_internal_record(result) for result in results]
+    internal_records = [
+        _internal_record(result, private=private, private_key=private_key) for result in results
+    ]
     summary = summarize_episodes(internal_records, attempts=attempts, private=private)
     summary.update(
         {
@@ -89,10 +99,10 @@ def evaluate(  # noqa: PLR0913
 
 
 def _episode_record(
-    result: EpisodeResult, *, private: bool, trajectory_dir: Path
+    result: EpisodeResult, *, private: bool, private_key: bytes, trajectory_dir: Path
 ) -> dict[str, Any]:
     task = result.task
-    task_id_hash = hashlib.sha256(task.id.encode()).hexdigest()
+    task_id_hash = _task_id_hash(task.id, private=private, private_key=private_key)
     record: dict[str, Any] = {
         "task_id_hash": task_id_hash,
         "attempt": result.attempt,
@@ -138,11 +148,11 @@ def _episode_record(
     return record
 
 
-def _internal_record(result: EpisodeResult) -> dict[str, Any]:
+def _internal_record(result: EpisodeResult, *, private: bool, private_key: bytes) -> dict[str, Any]:
     task = result.task
     return {
         "task_id": task.id,
-        "task_id_hash": hashlib.sha256(task.id.encode()).hexdigest(),
+        "task_id_hash": _task_id_hash(task.id, private=private, private_key=private_key),
         "family": task.family,
         "scenario": str(task.metadata.get("scenario_id", "unknown")),
         "attempt": result.attempt,
@@ -155,6 +165,15 @@ def _internal_record(result: EpisodeResult) -> dict[str, Any]:
         if result.score
         else [],
     }
+
+
+def _task_id_hash(task_id: str, *, private: bool, private_key: bytes) -> str:
+    value = task_id.encode()
+    return (
+        hmac.new(private_key, value, hashlib.sha256).hexdigest()
+        if private
+        else hashlib.sha256(value).hexdigest()
+    )
 
 
 def _safe_name(value: str) -> str:

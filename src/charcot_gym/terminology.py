@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from functools import lru_cache
 from importlib.resources import files
 from typing import Any
@@ -11,7 +12,7 @@ from typing import Any
 TOKEN_PATTERN = re.compile(r"[\w*]+(?:[-/][\w*]+)*", re.UNICODE)
 
 
-def terminology_search(system: str, query: str, limit: int = 10) -> list[dict[str, str]]:
+def terminology_search(system: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Return terminology entries whose display or synonyms contain query tokens."""
     if limit < 1:
         raise ValueError("limit must be a positive integer")
@@ -24,15 +25,51 @@ def terminology_search(system: str, query: str, limit: int = 10) -> list[dict[st
             continue
         searchable = " ".join([entry["display"], *entry["synonyms"]])
         if query_tokens <= _tokens(searchable):
+            today = date.today()
+            add_date = date.fromisoformat(entry["add_date"]) if entry.get("add_date") else None
+            termination_date = (
+                date.fromisoformat(entry["termination_date"])
+                if entry.get("termination_date")
+                else None
+            )
+            status = (
+                "active"
+                if (add_date is None or add_date <= today)
+                and (termination_date is None or today <= termination_date)
+                else "inactive"
+            )
             matches.append(
                 {
                     "system": entry["system"],
                     "code": entry["code"],
                     "display": entry["display"],
                     "unit": entry.get("unit", ""),
+                    "status": status,
+                    "termination_date": termination_date.isoformat() if termination_date else None,
                 }
             )
     return matches[:limit]
+
+
+def hcpcs_is_active_on(code: str, service_date: str) -> bool:
+    """Return whether a bundled HCPCS code is active on a service date."""
+    try:
+        billed_on = date.fromisoformat(service_date)
+    except (TypeError, ValueError):
+        return False
+    for entry in _entries():
+        if entry["system"] != "http://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets":
+            continue
+        if entry["code"] != code:
+            continue
+        add_date = date.fromisoformat(entry["add_date"]) if entry.get("add_date") else None
+        termination_date = (
+            date.fromisoformat(entry["termination_date"]) if entry.get("termination_date") else None
+        )
+        return (add_date is None or add_date <= billed_on) and (
+            termination_date is None or billed_on <= termination_date
+        )
+    return False
 
 
 @lru_cache(maxsize=1)
