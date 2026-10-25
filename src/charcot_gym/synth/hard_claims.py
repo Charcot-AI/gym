@@ -195,8 +195,9 @@ def _task(
     birth_date = service_date.replace(year=service_date.year - age)
     sex = "male" if regimen == "metastatic_prostate" else "female"
     patient_name = ("Avery", "Reed") if index % 2 else ("Morgan", "Ellis")
+    task_mrn = f"{730000 + index * 37 + (split == 'private') * 50000}"
     plan_id, insurance, coverage_entries, employer_size, msp_text = _coverage(
-        split, index, packs, regimen, dual_outcome, service_date, patient_id
+        split, index, packs, regimen, dual_outcome, service_date, patient_id, patient_name, task_mrn
     )
     plan = plans[plan_id]
     administrations, diagnosis_codes, diagnosis_by_code = _regimen(
@@ -297,7 +298,13 @@ def _task(
                     patient_id,
                     encounter_id,
                     service_date,
-                    _visit_text(regimen, cancer_code, bsa, docetaxel_dose),
+                    _visit_text(
+                        regimen,
+                        cancer_code,
+                        " ".join(patient_name),
+                        task_mrn,
+                        service_date,
+                    ),
                     "Infusion visit note",
                 )
             },
@@ -322,7 +329,17 @@ def _task(
                     patient_id,
                     encounter_id,
                     service_date,
-                    _mar_text(administrations, bsa, height_cm, weight_kg),
+                    _mar_text(
+                        administrations,
+                        bsa,
+                        height_cm,
+                        weight_kg,
+                        " ".join(patient_name),
+                        task_mrn,
+                        service_date,
+                        split,
+                        index,
+                    ),
                     "Pharmacy/MAR record",
                 )
             },
@@ -446,7 +463,13 @@ def _task(
                         patient_id,
                         encounter_id,
                         service_date,
-                        "Remittance advice\nReason: billed units do not match the documented administered dose.",
+                        _remittance_text(
+                            plan["name"],
+                            draft,
+                            " ".join(patient_name),
+                            task_mrn,
+                            service_date,
+                        ),
                         "Remittance advice",
                     )
                 },
@@ -521,9 +544,24 @@ def _task(
         "evidence": [
             {
                 "resource_id": note_id,
-                "text": _visit_text(regimen, cancer_code, bsa, docetaxel_dose),
+                "text": _visit_text(
+                    regimen, cancer_code, " ".join(patient_name), task_mrn, service_date
+                ),
             },
-            {"resource_id": mar_id, "text": _mar_text(administrations, bsa, height_cm, weight_kg)},
+            {
+                "resource_id": mar_id,
+                "text": _mar_text(
+                    administrations,
+                    bsa,
+                    height_cm,
+                    weight_kg,
+                    " ".join(patient_name),
+                    task_mrn,
+                    service_date,
+                    split,
+                    index,
+                ),
+            },
             {"resource_id": plan_doc_id, "text": _rules_text(plan, fee_rows)},
             {"resource_id": sop_id, "text": SOP_TEXT},
         ],
@@ -620,6 +658,8 @@ def _coverage(
     outcome: str | None,
     service_date: date,
     patient_id: str,
+    patient_name: tuple[str, str],
+    mrn: str,
 ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], int | None, str | None]:
     employer_size = None
     msp_text = None
@@ -632,11 +672,8 @@ def _coverage(
             if outcome != "retiree"
             else "Former employer: Northstar Manufacturing"
         )
-        msp_text = (
-            "Medicare Secondary Payer questionnaire\n"
-            f"Current employment status: {status}\n"
-            f"Employer name: {employer_name}\n"
-            f"Employer employee count: {employer_size}"
+        msp_text = _msp_questionnaire_text(
+            " ".join(patient_name), mrn, status, employer_name, employer_size
         )
         employer_id = f"coverage-employer-{split}-{index:03d}"
         medicare_id = f"coverage-medicare-{split}-{index:03d}"
@@ -872,7 +909,13 @@ def _rules_text(plan: dict[str, Any], fee_rows: dict[str, list[dict[str, Any]]])
     return "\n".join(lines)
 
 
-def _visit_text(regimen: str, cancer_code: str, bsa: float, dose: int) -> str:
+def _visit_text(
+    regimen: str,
+    cancer_code: str,
+    patient_name: str,
+    mrn: str,
+    service_date: date,
+) -> str:
     laterality = "right" if cancer_code == "C50.911" else "left"
     descriptions = {
         "early_breast": f"Adjuvant infusion following surgery for {laterality}-sided breast malignancy.",
@@ -880,28 +923,123 @@ def _visit_text(regimen: str, cancer_code: str, bsa: float, dose: int) -> str:
         "metastatic_prostate": "Infusion visit for metastatic prostate malignancy; tolerating the current cycle.",
     }
     return (
-        f"Oncology infusion visit\n{descriptions[regimen]}\n"
-        f"Mosteller BSA from chart height and weight: {bsa:.3f} m². "
-        f"Docetaxel 75 mg/m²; rounded dose {dose} mg."
+        "Riverside Oncology Clinic\n"
+        "4100 Fictional Medical Plaza, Fairhaven, OR 97000 | (555) 010-2200\n"
+        "ONCOLOGY INFUSION VISIT\n"
+        f"Patient: {patient_name}     MRN: {mrn}     Date: {service_date.isoformat()}\n"
+        "S: Here for the scheduled infusion cycle; no new infusion-related symptoms reported.\n"
+        f"O: {descriptions[regimen]}\n"
+        f"A: Active treatment for {cancer_code}.\n"
+        "P: Proceed with the documented regimen; pharmacy compounding worksheet records "
+        "prepared products and administration details."
     )
 
 
 def _mar_text(
-    administrations: list[dict[str, Any]], bsa: float, height_cm: int, weight_kg: float
+    administrations: list[dict[str, Any]],
+    bsa: float,
+    height_cm: int,
+    weight_kg: float,
+    patient_name: str,
+    mrn: str,
+    service_date: date,
+    split: str,
+    index: int,
 ) -> str:
     lines = [
-        "Pharmacy/MAR record",
-        f"Height: {height_cm} cm; weight: {weight_kg:.1f} kg; Mosteller BSA: {bsa:.3f} m².",
+        "Riverside Oncology Clinic — Infusion Pharmacy",
+        "PHARMACY COMPOUNDING WORKSHEET / MEDICATION ADMINISTRATION RECORD",
+        f"Patient: {patient_name}     MRN: {mrn}     Date of service: {service_date.isoformat()}",
+        f"Height: {height_cm} cm     Weight: {weight_kg:.1f} kg     Mosteller BSA: {bsa:.3f} m²",
+        "",
+        f"{'Drug':<12} {'Ordered':<10} {'Prepared':<10} {'Vials / lot':<54} {'Discarded':>8}",
+        "-" * 98,
     ]
-    for item in administrations:
-        line = f"{item['name']}: administered {item['dose']} {item['dose_unit']}."
+    for row_number, item in enumerate(administrations, 1):
+        dose = int(item["dose"])
+        lot = f"FIC-{split[0].upper()}{index:03d}-{row_number:02d}"
+        discarded = 0
         if item["code"] == "J9171":
             vials = item.get("vials_mg", _vials_for(int(item["dose"])))
             waste = item.get("waste_mg", _vial_total(int(item["dose"])) - int(item["dose"]))
-            line += f" Vials opened: {', '.join(map(str, vials))} mg; discarded: {waste} mg."
-        if item["code"] == "J0897":
-            line += " One 120 mg/1.7 mL single-dose vial opened; discarded: 0 mg."
-        lines.append(line)
+            vial_counts = {size: vials.count(size) for size in sorted(set(vials), reverse=True)}
+            vial_sizes = " + ".join(
+                f"{size} mg vial x{count}" for size, count in vial_counts.items()
+            )
+            vial_text = f"{vial_sizes}; lot {lot}"
+            discarded = int(waste)
+        elif item["code"] == "J0897":
+            vial_text = f"120 mg/1.7 mL vial x1; lot {lot}"
+        elif item["code"] == "J2405":
+            vial_text = f"8 mg/4 mL vial x1; lot {lot}"
+        else:
+            vial_text = f"{dose} mg vial x1; lot {lot}"
+        lines.append(
+            f"{item['name']:<12} {dose} {item['dose_unit']:<5} "
+            f"{dose} {item['dose_unit']:<5} {vial_text:<54} {discarded:>3} mg"
+        )
+    pharmacist = ("JL", "CM", "RC", "TB")[index % 4]
+    lines.extend(
+        [
+            "",
+            f"Pharmacist initials: {pharmacist}     Compounded: {service_date.isoformat()} 13:42",
+            f"Administration completed: {service_date.isoformat()} 15:18",
+            "All lot identifiers are fictitious.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _msp_questionnaire_text(
+    patient_name: str, mrn: str, status: str, employer_name: str, employee_count: int
+) -> str:
+    employed = status == "employed"
+    status_line = (
+        f"Employment status: [X] Currently employed  [ ] Retired since {status.removeprefix('retired since ')}"
+        if employed
+        else f"Employment status: [ ] Currently employed  [X] Retired since {status.removeprefix('retired since ')}"
+    )
+    return "\n".join(
+        [
+            "MEDICARE SECONDARY PAYER QUESTIONNAIRE",
+            f"Patient: {patient_name}     MRN: {mrn}",
+            "Is coverage based on current employment?",
+            status_line,
+            f"Employer name: {employer_name}",
+            f"Employer employee count: {employee_count}",
+            "Please complete for coordination-of-benefits review.",
+        ]
+    )
+
+
+def _remittance_text(
+    payer: str, claim: dict[str, Any], patient_name: str, mrn: str, service_date: date
+) -> str:
+    lines = [
+        f"{payer} — CLAIM REMITTANCE ADVICE",
+        "Claims Processing Center | 100 Example Parkway, Fairhaven, OR 97000",
+        f"Claim number: {claim['id']}",
+        f"Patient: {patient_name}     MRN: {mrn}",
+        f"Date of service: {service_date.isoformat()}",
+        "",
+        "BILLED LINES",
+        f"{'Code':<10} {'Units':>8} {'Billed':>12} {'Allowed':>12} {'Paid':>12}",
+        "-" * 58,
+    ]
+    for item in claim["item"]:
+        code = item["productOrService"]["coding"][0]["code"]
+        amount = float(item["net"]["value"])
+        lines.append(
+            f"{code:<10} {int(item['quantity']['value']):>8} "
+            f"${amount:>11.2f} ${0:>11.2f} ${0:>11.2f}"
+        )
+    lines.extend(
+        [
+            "",
+            "DENIAL REASON",
+            "Reason: billed units do not match the documented administered dose.",
+        ]
+    )
     return "\n".join(lines)
 
 

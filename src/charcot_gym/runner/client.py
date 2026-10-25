@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
@@ -24,6 +25,7 @@ class ModelConfig:
     retry_backoff_s: float = 0.5
     price_table: dict[str, dict[str, float]] = field(default_factory=dict)
     supports_images: bool = True
+    tasks_dir: Path | None = None
 
     def __post_init__(self) -> None:
         if self.timeout <= 0:

@@ -119,30 +119,37 @@ def _reports(task: Task) -> list[dict[str, Any]]:
 def _parse_report_rows(text: str) -> list[dict[str, Any]]:
     header_collection = COLLECTION_PATTERN.search(text)
     fallback_date = header_collection.group(1) if header_collection else ""
+    human_units = {
+        "mL/min/1.73 m²": "mL/min/{1.73_m2}",
+        "10³/µL": "10*3/uL",
+    }
+    add_on_dates = {
+        match.group(2): match.group(1)
+        for line in text.splitlines()
+        if (match := re.search(r"Add-on specimen collected: (\d{4}-\d{2}-\d{2}) — (.+)", line))
+    }
     rows = []
     for line in text.splitlines():
-        content = line.strip().strip("|").strip()
+        content = line.strip()
         for short_name in sorted(SHORT_NAME_TO_CODE, key=len, reverse=True):
             if not content.startswith(short_name):
                 continue
-            remainder = content[len(short_name) :].lstrip(" |:")
-            value_match = VALUE_PATTERN.search(remainder)
-            if value_match is None:
+            fields = re.split(r"\s{2,}", content)
+            if len(fields) < 5:
                 continue
-            value_text, unit = value_match.groups()
+            value_text = fields[1].strip()
+            unit = fields[3].strip()
             value_number = float(value_text)
-            range_match = RANGE_PATTERN.search(remainder)
-            flag_match = re.search(r"\s([HL])\s+\(", remainder)
-            row_collection = COLLECTION_PATTERN.search(line)
+            interval = fields[4].strip()
             rows.append(
                 {
                     "code": SHORT_NAME_TO_CODE[short_name],
                     "value": int(value_number) if value_number.is_integer() else value_number,
                     "value_text": value_text,
-                    "unit": unit,
-                    "range": range_match.group(1) if range_match else "",
-                    "flag": flag_match.group(1) if flag_match else "",
-                    "effective": row_collection.group(1) if row_collection else fallback_date,
+                    "unit": human_units.get(unit, unit),
+                    "range": interval,
+                    "flag": fields[2].strip() if fields[2].strip() != "—" else "",
+                    "effective": add_on_dates.get(short_name, fallback_date),
                 }
             )
             break
@@ -265,7 +272,7 @@ def test_hard_task_distribution_traps_and_resource_ids() -> None:
         assert all(resource.get("resourceType") != "DocumentReference" for resource in resources)
         assert "environment" not in task.public_view()
         for report in _reports(task):
-            assert report["text"].splitlines()[0] == "Synthetic Laboratory Report"
+            assert "Lab" in report["text"].splitlines()[0]
             assert _report_date(report["text"]) == report["date"]
         if "corrected_report" in task.metadata["trap_types"]:
             reports_by_role = {report["role"]: report for report in _reports(task)}
@@ -507,11 +514,15 @@ def test_hard_reports_use_short_names_ranges_and_no_loinc_identifiers() -> None:
         assert all(display.casefold() not in text.casefold() for display in displays)
         for row in _parse_report_rows(text):
             assert row["range"]
-            lower, upper = (float(value) for value in row["range"].split("\u2013"))
+            if row["range"].startswith(">="):
+                lower = float(row["range"][2:])
+                upper = float("inf")
+            else:
+                lower, upper = (float(value) for value in row["range"].split("\u2013"))
             expected_flag = "L" if row["value"] < lower else "H" if row["value"] > upper else ""
             assert row["flag"] == expected_flag
     assert any("Fasting status: unknown" in text for text in texts)
-    assert any("Comment:" in text for text in texts)
+    assert any("Comments:" in text for text in texts)
     assert len(SHORT_NAME_TO_CODE) == sum(
         len(names) for names in HARD_CONFIG["short_names"].values()
     )

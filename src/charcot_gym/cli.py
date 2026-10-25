@@ -103,6 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timeout=args.timeout,
                 price_table=prices,
                 supports_images=not args.text_only,
+                tasks_dir=args.tasks_dir,
             ),
             split=args.split,
             difficulty=args.difficulty,

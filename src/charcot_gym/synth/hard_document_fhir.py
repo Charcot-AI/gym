@@ -229,6 +229,7 @@ def _generate_task(  # noqa: PLR0913
         text = _render_report(
             patient_name=f"{given} {family}",
             birth_date=birth_date,
+            sex=sex,
             mrn=mrn,
             report_date=TASK_DATE,
             collection_date=collected,
@@ -252,6 +253,7 @@ def _generate_task(  # noqa: PLR0913
         corrected_text = _render_report(
             patient_name=f"{given} {family}",
             birth_date=birth_date,
+            sex=sex,
             mrn=mrn,
             report_date=TASK_DATE,
             collection_date=collection_date,
@@ -278,6 +280,7 @@ def _generate_task(  # noqa: PLR0913
         prior_text = _render_report(
             patient_name=f"{given} {family}",
             birth_date=birth_date,
+            sex=sex,
             mrn=mrn,
             report_date=TASK_DATE,
             collection_date=prior_date,
@@ -311,6 +314,7 @@ def _generate_task(  # noqa: PLR0913
         wrong_text = _render_report(
             patient_name=f"{wrong_given} {wrong_family}",
             birth_date=birth_date - timedelta(days=365 * 7),
+            sex=sex,
             mrn=f"SYN-MRN-OTHER-{split.upper()}-{index:03d}",
             report_date=TASK_DATE,
             collection_date=collection_date,
@@ -560,19 +564,34 @@ def _shift_foreign_value(
 
 def _range_annotation(row: dict[str, Any]) -> tuple[str, str]:
     reference_range = row["reference_range"]
-    minimum = reference_range["min"]
-    maximum = reference_range["max"]
+    minimum = reference_range.get("min")
+    maximum = reference_range.get("max")
     value = float(row["value"])
-    flag = " L" if value < minimum else " H" if value > maximum else ""
-    lower = _format_value(minimum, row["precision"])
-    upper = _format_value(maximum, row["precision"])
-    return flag, f" ({lower}\u2013{upper})"
+    if minimum is not None and value < minimum:
+        flag = "L"
+    elif maximum is not None and value > maximum:
+        flag = "H"
+    else:
+        flag = "—"
+    if minimum is not None and maximum is not None:
+        interval = (
+            f"{_format_value(minimum, row['precision'])}\u2013"
+            f"{_format_value(maximum, row['precision'])}"
+        )
+    elif minimum is not None:
+        interval = f">={_format_value(minimum, row['precision'])}"
+    elif maximum is not None:
+        interval = f"<={_format_value(maximum, row['precision'])}"
+    else:
+        interval = "—"
+    return flag, interval
 
 
 def _render_report(  # noqa: PLR0913
     *,
     patient_name: str,
     birth_date: date,
+    sex: str,
     mrn: str,
     report_date: date,
     collection_date: date,
@@ -584,64 +603,88 @@ def _render_report(  # noqa: PLR0913
     corrected: bool = False,
     cancelled: bool = False,
 ) -> str:
-    lines = ["Synthetic Laboratory Report"]
+    letterhead = _LAB_LETTERHEADS[
+        int.from_bytes(hashlib.sha256(accession.encode()).digest()[:2], "big")
+        % len(_LAB_LETTERHEADS)
+    ]
+    time_seed = int.from_bytes(hashlib.sha256(f"{accession}:time".encode()).digest()[:2], "big")
+    collected_at = (
+        f"{collection_date.isoformat()} {7 + time_seed % 3:02d}:{(time_seed // 7) % 60:02d}"
+    )
+    received_at = f"{report_date.isoformat()} {10 + time_seed % 3:02d}:{(time_seed // 11) % 60:02d}"
+    reported_at = f"{report_date.isoformat()} {12 + time_seed % 4:02d}:{(time_seed // 13) % 60:02d}"
+    lab_id = f"FIC-LAB-{100 + time_seed % 900:03d}"
+    ordering_provider = _ORDERING_PROVIDERS[time_seed % len(_ORDERING_PROVIDERS)]
+    lines = [
+        letterhead[0],
+        letterhead[1],
+        f"Telephone: {letterhead[2]}   Laboratory ID: {lab_id}",
+        "FINAL LABORATORY REPORT",
+    ]
     if corrected:
-        lines.append("CORRECTED REPORT")
-    if layout == "reference_table":
-        lines.extend(
-            [
-                "Reference Laboratory Results",
-                f"Patient: {patient_name} | DOB: {birth_date.isoformat()} | MRN: {mrn}",
-                f"Accession: {accession}",
-                f"Collected: {collection_date.isoformat()}",
-                f"Reported: {report_date.isoformat()}",
-                "TEST RESULTS",
-                "Test | Result",
-            ]
-        )
-    elif layout == "portal_summary":
-        lines.extend(
-            [
-                "Patient Portal Laboratory Results",
-                f"Name: {patient_name} | Date of birth: {birth_date.isoformat()}",
-                f"Medical record number: {mrn}",
-                f"Accession number: {accession}",
-                f"Collected: {collection_date.isoformat()}",
-                f"Reported: {report_date.isoformat()}",
-                "Results",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "Outpatient Reference Laboratory",
-                f"MRN {mrn} | DOB {birth_date.isoformat()} | Patient {patient_name}",
-                f"Accession No. {accession}",
-                f"Collected: {collection_date.isoformat()}",
-                f"Reported: {report_date.isoformat()}",
-                "FINAL RESULTS",
-            ]
-        )
+        lines.append("*** CORRECTED REPORT — REPLACES THE PRIOR REPORT FOR THIS ACCESSION ***")
+    lines.extend(
+        [
+            "",
+            "PATIENT / SPECIMEN",
+            f"Patient: {patient_name}     DOB: {birth_date.isoformat()}     Sex: {sex.title()}",
+            f"MRN: {mrn}     Ordering provider: {ordering_provider}",
+            f"Accession: {accession}",
+            f"Collected: {collected_at}",
+            f"Received: {received_at}",
+            f"Reported: {reported_at}",
+            "",
+            "RESULTS",
+            f"{'Test':<36} {'Result':>9} {'Flag':>4}  {'Units':<20} {'Reference interval':>20}",
+            "-" * 94,
+        ]
+    )
     layout_index = REPORT_LAYOUTS.index(layout)
     for row in rows:
         short_name = short_names[row["code"]][layout_index % len(short_names[row["code"]])]
         result = _format_value(row["value"], row["precision"])
-        flag, range_text = _range_annotation(row)
-        suffix = ""
+        flag, interval = _range_annotation(row)
+        unit = _HUMAN_UNITS.get(row["unit"], row["unit"])
+        lines.append(f"{short_name:<36} {result:>9} {flag:>4}  {unit:<20} {interval:>20}")
         if row["effective"] != collection_date.isoformat():
-            suffix = f" | Add-on collected: {row['effective']}"
-        if layout == "reference_table":
-            lines.append(f"| {short_name} | {result} {row['unit']}{flag}{range_text}{suffix} |")
-        elif layout == "portal_summary":
-            lines.append(f"{short_name}: {result} {row['unit']}{flag}{range_text}{suffix}")
-        else:
-            lines.append(f"{short_name}  {result} {row['unit']}{flag}{range_text}{suffix}")
+            lines.append(f"Add-on specimen collected: {row['effective']} — {short_name}")
     comment = comments_by_layout.get(layout)
     if comment:
-        lines.append(comment)
+        lines.extend(["", f"Comments: {comment.removeprefix('Comment: ')}"])
     if cancelled:
-        lines.append("Potassium: specimen hemolyzed; test not performed.")
+        lines.extend(["", "Comments: Potassium specimen hemolyzed; test not performed."])
+    lines.extend(
+        [
+            "",
+            f"Page 1 of 1   |   {letterhead[0]}",
+            "SYNTHETIC RECORD — NOT A REAL PATIENT",
+        ]
+    )
     return "\n".join(lines)
+
+
+_LAB_LETTERHEADS = (
+    (
+        "Juniper Ridge Reference Laboratory",
+        "4100 Example Way, Fairhaven, OR 97000",
+        "(555) 010-1411",
+    ),
+    (
+        "Blue Heron Clinical Reference Lab",
+        "72 Fictional Park, Bellwether, MN 55000",
+        "(555) 010-1834",
+    ),
+    (
+        "Cedar Vale Diagnostic Laboratory",
+        "900 Placeholder Road, Northfield, MA 01000",
+        "(555) 010-1276",
+    ),
+)
+_ORDERING_PROVIDERS = ("Jordan Lee, MD", "Casey Morgan, DO", "Riley Chen, MD", "Taylor Brooks, NP")
+_HUMAN_UNITS = {
+    "mL/min/{1.73_m2}": "mL/min/1.73 m²",
+    "10*3/uL": "10³/µL",
+}
 
 
 def _document_reference(
