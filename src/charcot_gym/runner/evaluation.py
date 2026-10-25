@@ -53,7 +53,7 @@ def evaluate(  # noqa: PLR0913
     submission = _submission_record(
         submitter,
         organization,
-        submitted if submitted is not None else date.today().isoformat(),
+        submitted or date.today().isoformat(),
         availability,
     )
     output = Path(out_dir)
@@ -159,6 +159,7 @@ def write_submission(
     submitted: str | None,
     availability: str,
 ) -> dict[str, Any]:
+    """Write submission metadata to a run directory."""
     submission = _submission_record(
         submitter,
         organization,

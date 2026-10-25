@@ -465,14 +465,11 @@ def test_submission_command_backfills_legacy_run_without_overwriting(
         "submitted": "2026-10-25",
         "availability": "api",
     }
-    assert {
-        path.relative_to(run_dir)
-        for path in run_dir.rglob("*")
-        if path.is_file()
-    } == {*previous_files, Path("submission.json")}
-    assert all(
-        (run_dir / path).read_bytes() == content for path, content in previous_files.items()
-    )
+    assert {path.relative_to(run_dir) for path in run_dir.rglob("*") if path.is_file()} == {
+        *previous_files,
+        Path("submission.json"),
+    }
+    assert all((run_dir / path).read_bytes() == content for path, content in previous_files.items())
     result = build_leaderboard(
         [run_dir],
         tmp_path / "legacy-leaderboard",
