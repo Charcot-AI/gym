@@ -31,6 +31,23 @@ REQUIRED_FIELDS = {
     "ClaimResponse": ("status", "type", "use", "patient", "outcome"),
     "Claim": ("status", "type", "use", "patient"),
 }
+PATIENT_REFERENCE_FIELDS = {
+    "Observation": "subject",
+    "Condition": "subject",
+    "Encounter": "subject",
+    "DocumentReference": "subject",
+    "MedicationAdministration": "subject",
+    "Coverage": "beneficiary",
+    "Claim": "patient",
+    "ClaimResponse": "patient",
+}
+SUBJECT_SEARCH_TYPES = {
+    "Observation",
+    "Condition",
+    "Encounter",
+    "DocumentReference",
+    "MedicationAdministration",
+}
 
 
 class FHIRStore:
@@ -77,7 +94,11 @@ class FHIRStore:
         """Search a resource type using supported simple parameters."""
         if resource_type not in SUPPORTED_TYPES:
             raise ValueError(f"unsupported FHIR resource type: {resource_type}")
-        filters = params or {}
+        filters = {
+            name: value
+            for name, value in (params or {}).items()
+            if not (isinstance(value, str) and value == "")
+        }
         invalid_params = set(filters) - {"subject", "patient", "code"}
         if invalid_params:
             raise ValueError(f"unsupported search parameter: {sorted(invalid_params)[0]}")
@@ -85,7 +106,10 @@ class FHIRStore:
         for (kind, _), resource in sorted(self._resources.items()):
             if kind != resource_type:
                 continue
-            if all(self._matches_param(resource, name, value) for name, value in filters.items()):
+            if all(
+                self._matches_param(resource_type, resource, name, value)
+                for name, value in filters.items()
+            ):
                 results.append(deepcopy(resource))
         return results
 
@@ -162,18 +186,23 @@ class FHIRStore:
                 self._validate_references(nested)
 
     @staticmethod
-    def _matches_param(resource: dict[str, Any], name: str, value: Any) -> bool:
-        if name in {"subject", "patient"}:
-            references = [
-                item["reference"]
-                for field in ("subject", "patient")
-                if isinstance((item := resource.get(field)), dict)
-                and isinstance(item.get("reference"), str)
-            ]
-            return value in references or any(
-                reference.rsplit("/", 1)[-1] == value for reference in references
-            )
+    def _matches_param(resource_type: str, resource: dict[str, Any], name: str, value: Any) -> bool:
+        if name == "subject":
+            if resource_type not in SUBJECT_SEARCH_TYPES:
+                return True
+            return _reference_matches(resource.get("subject"), value)
+        if name == "patient":
+            field = PATIENT_REFERENCE_FIELDS.get(resource_type)
+            return field is not None and _reference_matches(resource.get(field), value)
         return _contains_code(resource, value)
+
+
+def _reference_matches(value: Any, query: Any) -> bool:
+    reference = value.get("reference") if isinstance(value, dict) else None
+    if not isinstance(reference, str) or not isinstance(query, str):
+        return False
+    expected = query if "/" in query else f"Patient/{query}"
+    return reference == expected
 
 
 def _has_code(value: Any) -> bool:
@@ -187,8 +216,23 @@ def _has_code(value: Any) -> bool:
 
 
 def _contains_code(value: Any, code: Any) -> bool:
+    if not isinstance(code, str):
+        return False
+    if "|" in code:
+        system, expected_code = code.split("|", 1)
+        expected_system = system or None
+    else:
+        expected_code = code
+        expected_system = None
+
     if isinstance(value, dict):
-        if value.get("code") == code:
+        codings = value.get("coding")
+        if isinstance(codings, list) and any(
+            isinstance(coding, dict)
+            and coding.get("code") == expected_code
+            and (expected_system is None or coding.get("system") == expected_system)
+            for coding in codings
+        ):
             return True
         return any(_contains_code(item, code) for item in value.values())
     if isinstance(value, list):

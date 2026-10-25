@@ -5,6 +5,7 @@
       "id": "routine",
       "weight": 0.4,
       "panels": ["weighted"],
+      "abnormal_analytes": [],
       "history_rules": {},
       "current_rules": {}
     },
@@ -12,6 +13,8 @@
       "id": "aki",
       "weight": 0.12,
       "panels": ["BMP"],
+      "abnormal_analytes": ["creatinine", "BUN", "potassium"],
+      "required_abnormalities": {"creatinine_min": 1.4},
       "history_rules": {
         "2160-0": {"min": 0.7, "max": 1.1}
       },
@@ -24,11 +27,13 @@
       "id": "uncontrolled_diabetes",
       "weight": 0.12,
       "panels": ["HbA1c", "BMP"],
+      "abnormal_analytes": ["glucose", "HbA1c"],
+      "required_abnormalities": {"hba1c_min": 9.0},
       "history_rules": {
         "4548-4": {"min": 7.0, "max": 9.0}
       },
       "current_rules": {
-        "4548-4": {"min": 8.5, "max": 11.5},
+        "4548-4": {"min": 9.0, "max": 11.5},
         "2345-7": {"min": 180, "max": 320}
       }
     },
@@ -36,6 +41,8 @@
       "id": "hypokalemia",
       "weight": 0.12,
       "panels": ["BMP"],
+      "abnormal_analytes": ["potassium"],
+      "required_abnormalities": {"potassium_max": 3.4},
       "history_rules": {
         "2823-3": {"min": 3.6, "max": 4.6}
       },
@@ -47,6 +54,10 @@
       "id": "oncology_precycle",
       "weight": 0.24,
       "panels": ["CBC + ANC", "LFT", "creatinine", "tumor marker"],
+      "abnormal_analytes": ["ANC", "WBC", "platelets", "Hgb", "Hct"],
+      "required_abnormalities": {
+        "oncology_hold": {"anc_below": 1.5, "platelets_below": 100}
+      },
       "analyte_codes": [
         "718-7", "4544-3", "6690-2", "777-3", "751-8",
         "1742-6", "1920-8", "2160-0", "2039-6", "2857-1"

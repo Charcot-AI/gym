@@ -10,6 +10,41 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from charcot_gym.task import Task
+from charcot_gym.terminology import hcpcs_is_active_on
+
+LOINC_SYSTEM_URI = "http://loinc.org"
+UCUM_SYSTEM_URI = "http://unitsofmeasure.org"
+ICD10CM_SYSTEM_URI = "http://hl7.org/fhir/sid/icd-10-cm"
+CONDITION_CLINICAL_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-clinical"
+CONDITION_VERIFICATION_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-ver-status"
+CONDITION_CATEGORY_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-category"
+CLAIM_TYPE_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/claim-type"
+RELATED_CLAIM_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/related-claim-relationship"
+HCPCS_SYSTEM_URI = "http://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets"
+CLAIM_STATUS_ACTIVE = "active"
+CLAIM_TYPE_PROFESSIONAL = "professional"
+CLAIM_USE_VALUES = ("claim", "preauthorization")
+RELATED_CLAIM_PRIOR = "prior"
+DOCUMENT_STATUS_FINAL = "final"
+CONDITION_CLINICAL_ACTIVE = "active"
+CONDITION_VERIFICATION_CONFIRMED = "confirmed"
+CONDITION_CATEGORY_ENCOUNTER_DIAGNOSIS = "encounter-diagnosis"
+DOCUMENT_PROMPT_CODE_VALUES = (DOCUMENT_STATUS_FINAL,)
+CLINICAL_CODING_PROMPT_CODE_VALUES = (
+    CONDITION_CLINICAL_ACTIVE,
+    CONDITION_VERIFICATION_CONFIRMED,
+    CONDITION_CATEGORY_ENCOUNTER_DIAGNOSIS,
+)
+CLAIMS_PROMPT_CODE_VALUES = (
+    CLAIM_STATUS_ACTIVE,
+    CLAIM_TYPE_PROFESSIONAL,
+    "focal",
+)
+CLAIM_FIX_PROMPT_CODE_VALUES = (RELATED_CLAIM_PRIOR,)
+DOCUMENT_PROMPT_REQUIRED_URIS = (UCUM_SYSTEM_URI,)
+CLINICAL_CODING_PROMPT_REQUIRED_URIS = (ICD10CM_SYSTEM_URI,)
+CLAIMS_PROMPT_REQUIRED_URIS = (ICD10CM_SYSTEM_URI, HCPCS_SYSTEM_URI)
+CLAIM_FIX_PROMPT_REQUIRED_URIS = (RELATED_CLAIM_SYSTEM_URI,)
 
 
 class Check(BaseModel):
@@ -468,14 +503,22 @@ class ClaimsVerifier:
             ]
             actual_item = matching_items[0] if len(matching_items) == 1 else {}
             actual_code = _product_code(actual_item, hcpcs_system_aliases)
+            actual_code_active = bool(
+                actual_code
+                and hcpcs_is_active_on(actual_code, str(actual_item.get("servicedDate", "")))
+            )
             checks.extend(
                 [
                     _claim_check(
                         f"item_{index + 1}_code",
-                        len(matching_items) == 1 and actual_code == expected_code,
-                        f"Expected HCPCS {expected_code}."
-                        if len(matching_items) == 1 and actual_code == expected_code
-                        else f"Expected HCPCS {expected_code}; found {actual_code}.",
+                        len(matching_items) == 1
+                        and actual_code == expected_code
+                        and actual_code_active,
+                        f"Expected active HCPCS {expected_code}."
+                        if len(matching_items) == 1
+                        and actual_code == expected_code
+                        and actual_code_active
+                        else f"Expected active HCPCS {expected_code}; found {actual_code}.",
                     ),
                     _claim_check(
                         f"item_{index + 1}_quantity",
@@ -603,7 +646,7 @@ def _diagnoses_match(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> 
         return False
     if len(actual_diagnoses) != len(expected_diagnoses):
         return False
-    icd_system = {"http://hl7.org/fhir/sid/icd-10-cm"}
+    icd_system = {ICD10CM_SYSTEM_URI}
     for actual_diagnosis, expected_diagnosis in zip(
         actual_diagnoses, expected_diagnoses, strict=True
     ):
@@ -695,7 +738,7 @@ def _diagnosis_sequence_is_covered(
     ):
         return False
     allowed_sequences = set(sequences)
-    icd_system = {"http://hl7.org/fhir/sid/icd-10-cm"}
+    icd_system = {ICD10CM_SYSTEM_URI}
     for diagnosis in diagnoses:
         if not isinstance(diagnosis, Mapping) or diagnosis.get("sequence") not in allowed_sequences:
             continue
@@ -743,24 +786,24 @@ def _condition_match(
         and resource.get("encounter", {}).get("reference") == f"Encounter/{encounter_id}"
         and any(
             isinstance(item, dict)
-            and item.get("system") == "http://hl7.org/fhir/sid/icd-10-cm"
+            and item.get("system") == ICD10CM_SYSTEM_URI
             and item.get("code") == code
             for item in coding
         )
         and _has_status_coding(
             resource.get("clinicalStatus"),
-            "http://terminology.hl7.org/CodeSystem/condition-clinical",
-            "active",
+            CONDITION_CLINICAL_SYSTEM_URI,
+            CONDITION_CLINICAL_ACTIVE,
         )
         and _has_status_coding(
             resource.get("verificationStatus"),
-            "http://terminology.hl7.org/CodeSystem/condition-ver-status",
-            "confirmed",
+            CONDITION_VERIFICATION_SYSTEM_URI,
+            CONDITION_VERIFICATION_CONFIRMED,
         )
         and _has_status_coding(
             resource.get("category"),
-            "http://terminology.hl7.org/CodeSystem/condition-category",
-            "encounter-diagnosis",
+            CONDITION_CATEGORY_SYSTEM_URI,
+            CONDITION_CATEGORY_ENCOUNTER_DIAGNOSIS,
         )
     )
 
@@ -791,16 +834,16 @@ def _document_match(
     effective = str(resource.get("effectiveDateTime", "")).split("T", maxsplit=1)[0]
     return (
         resource.get("resourceType") == "Observation"
-        and resource.get("status") == "final"
+        and resource.get("status") == DOCUMENT_STATUS_FINAL
         and any(
             isinstance(item, dict)
-            and item.get("system") == "http://loinc.org"
+            and item.get("system") == LOINC_SYSTEM_URI
             and item.get("code") == expected.get("code")
             for item in coding
         )
         and value is not None
         and value == expected_value
-        and quantity.get("system") == "http://unitsofmeasure.org"
+        and quantity.get("system") == UCUM_SYSTEM_URI
         and quantity.get("code") == expected.get("unit")
         and resource.get("subject", {}).get("reference") == f"Patient/{patient_id}"
         and effective == expected.get("effective")
