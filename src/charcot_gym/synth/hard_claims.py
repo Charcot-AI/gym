@@ -984,6 +984,7 @@ def _coverage_resource(resource_id: str, patient_id: str, plan_id: str) -> dict[
         "status": "active",
         "beneficiary": {"reference": f"Patient/{patient_id}"},
         "payor": [{"reference": f"Organization/{plan_id}"}],
+        "period": {"start": "2020-01-01", "end": "2027-12-31"},
     }
 
 

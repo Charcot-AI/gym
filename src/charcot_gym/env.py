@@ -74,6 +74,7 @@ class ClinicalEnv:
         self._tools = (tools or CORE_TOOLS).copy()
         self._task: Task | None = None
         self._store: FHIRStore | None = None
+        self._task_environment: dict[str, Any] = {}
         self._initial_snapshot: str | None = None
         self._step_count = 0
         self._invalid_actions = 0
@@ -102,6 +103,7 @@ class ClinicalEnv:
         self._verifiers.get(task.verifier)
         self._tools.schemas(task)
         self._task = task
+        self._task_environment = deepcopy(task.environment)
         self._store = FHIRStore(deepcopy(task.initial_state), seed=seed)
         self._initial_snapshot = _canonical_json(self._store.snapshot())
         self._step_count = 0
@@ -130,6 +132,7 @@ class ClinicalEnv:
                     action.arguments,
                     self._store,
                     self._task.tools,
+                    self._task_environment,
                 )
             except ToolExecutionError as error:
                 self._invalid_actions += 1
