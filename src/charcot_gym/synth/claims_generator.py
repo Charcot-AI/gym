@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from charcot_gym.synth.generator import generate_task_sets
+from charcot_gym.terminology import (
+    ICD10CM_SYSTEM_URI,
+    LOINC_SYSTEM_URI,
+    V3_ACT_CODE_SYSTEM_URI,
+)
 
 HERE = Path(__file__).parent
 PACKAGE = HERE.parent
@@ -410,9 +415,7 @@ def _claim(  # noqa: PLR0913, PLR0917
     diagnosis_items = [
         {
             "sequence": sequence,
-            "diagnosisCodeableConcept": {
-                "coding": [{"system": "http://hl7.org/fhir/sid/icd-10-cm", "code": code}]
-            },
+            "diagnosisCodeableConcept": {"coding": [{"system": ICD10CM_SYSTEM_URI, "code": code}]},
         }
         for sequence, code in enumerate(diagnoses, start=1)
     ]
@@ -510,7 +513,7 @@ def _reprice(claim: dict[str, Any]) -> None:
 def _first_code(condition: dict[str, Any] | None) -> str | None:
     if condition:
         for coding in condition.get("code", {}).get("coding", []):
-            if coding.get("system") == "http://hl7.org/fhir/sid/icd-10-cm":
+            if coding.get("system") == ICD10CM_SYSTEM_URI:
                 return str(coding["code"])
     return None
 
@@ -556,7 +559,7 @@ def _prior_awv_encounter(
             {
                 "coding": [
                     {
-                        "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+                        "system": V3_ACT_CODE_SYSTEM_URI,
                         "code": "AMB",
                     }
                 ]
@@ -622,7 +625,7 @@ def _append_visit_note(  # noqa: PLR0913, PLR0917
                 "id": note_id,
                 "status": "current",
                 "language": "en-US",
-                "type": {"coding": [{"system": "http://loinc.org", "code": "11506-3"}]},
+                "type": {"coding": [{"system": LOINC_SYSTEM_URI, "code": "11506-3"}]},
                 "subject": {"reference": f"Patient/{patient_id}"},
                 "date": service_date,
                 "context": {"encounter": [{"reference": f"Encounter/{encounter_id}"}]},

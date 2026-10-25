@@ -417,7 +417,7 @@ def test_document_reports_contain_no_icd_codes_or_internal_terms() -> None:
                 is None
             )
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "check_terms.py")],
+        [sys.executable, str(ROOT / "scripts" / "maintenance.py"), "check"],
         cwd=ROOT,
         check=False,
         capture_output=True,
@@ -428,7 +428,7 @@ def test_document_reports_contain_no_icd_codes_or_internal_terms() -> None:
 
 def test_build_task_check_preserves_standard_and_hard_artifacts() -> None:
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_tasks.py"), "--check"],
+        [sys.executable, str(ROOT / "scripts" / "maintenance.py"), "tasks", "--check"],
         cwd=ROOT,
         check=False,
         capture_output=True,

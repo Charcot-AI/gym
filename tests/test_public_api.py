@@ -612,7 +612,7 @@ def test_duplicate_task_ids_fail_to_load(tmp_path: Path) -> None:
 
 def test_term_guard_runs_cleanly() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "check_terms.py")],
+        [sys.executable, str(ROOT / "scripts" / "maintenance.py"), "check"],
         cwd=ROOT,
         check=False,
         capture_output=True,

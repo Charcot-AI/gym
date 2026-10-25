@@ -13,12 +13,13 @@ from charcot_gym.synth.lab_values import (
     _round_value,
     _sample_value,
 )
-
-LOINC_SYSTEM = "http://loinc.org"
-UCUM_SYSTEM = "http://unitsofmeasure.org"
-CONDITION_CLINICAL_SYSTEM = "http://terminology.hl7.org/CodeSystem/condition-clinical"
-ACT_CODE_SYSTEM = "http://terminology.hl7.org/CodeSystem/v3-ActCode"
-ICD10_SYSTEM = "http://hl7.org/fhir/sid/icd-10-cm"
+from charcot_gym.terminology import (
+    CONDITION_CLINICAL_SYSTEM_URI,
+    ICD10CM_SYSTEM_URI,
+    LOINC_SYSTEM_URI,
+    UCUM_SYSTEM_URI,
+    V3_ACT_CODE_SYSTEM_URI,
+)
 
 
 def generate_longitudinal_record(  # noqa: PLR0913
@@ -97,7 +98,7 @@ def generate_longitudinal_record(  # noqa: PLR0913
             "resourceType": "Encounter",
             "id": encounter_id,
             "status": "completed",
-            "class": [{"coding": [{"system": ACT_CODE_SYSTEM, "code": "AMB"}]}],
+            "class": [{"coding": [{"system": V3_ACT_CODE_SYSTEM_URI, "code": "AMB"}]}],
             "subject": {"reference": f"Patient/{patient_id}"},
             "actualPeriod": {"start": effective_date.isoformat()},
         }
@@ -317,7 +318,7 @@ def _check_physiologic_value(
 
 def _egfr_entry(config: dict[str, Any]) -> dict[str, Any]:
     return {
-        "system": LOINC_SYSTEM,
+        "system": LOINC_SYSTEM_URI,
         "code": config["code"],
         "display": config["display"],
         "unit": config["unit"],
@@ -340,7 +341,7 @@ def _observation(  # noqa: PLR0913, PLR0917
         "code": {
             "coding": [
                 {
-                    "system": entry.get("system", LOINC_SYSTEM),
+                    "system": entry.get("system", LOINC_SYSTEM_URI),
                     "code": entry["code"],
                     "display": entry.get("display", entry["code"]),
                 }
@@ -352,7 +353,7 @@ def _observation(  # noqa: PLR0913, PLR0917
         "valueQuantity": {
             "value": value,
             "unit": entry["unit"],
-            "system": UCUM_SYSTEM,
+            "system": UCUM_SYSTEM_URI,
             "code": entry["unit"],
         },
     }
@@ -371,7 +372,7 @@ def _condition(
         "clinicalStatus": {
             "coding": [
                 {
-                    "system": CONDITION_CLINICAL_SYSTEM,
+                    "system": CONDITION_CLINICAL_SYSTEM_URI,
                     "code": condition["clinical_status"],
                 }
             ]
@@ -379,7 +380,7 @@ def _condition(
         "code": {
             "coding": [
                 {
-                    "system": ICD10_SYSTEM,
+                    "system": ICD10CM_SYSTEM_URI,
                     "code": condition["code"],
                     "display": condition["display"],
                 }

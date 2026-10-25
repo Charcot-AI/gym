@@ -9,6 +9,30 @@ from functools import lru_cache
 from importlib.resources import files
 from typing import Any
 
+LOINC_SYSTEM_URI = "http://loinc.org"
+UCUM_SYSTEM_URI = "http://unitsofmeasure.org"
+ICD10CM_SYSTEM_URI = "http://hl7.org/fhir/sid/icd-10-cm"
+HCPCS_SYSTEM_URI = "http://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets"
+HL7_HCPCS_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/HCPCS"
+CONDITION_CLINICAL_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-clinical"
+CONDITION_VERIFICATION_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-ver-status"
+CONDITION_CATEGORY_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-category"
+CLAIM_TYPE_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/claim-type"
+RELATED_CLAIM_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/related-claim-relationship"
+OBSERVATION_CATEGORY_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/observation-category"
+V3_ACT_CODE_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/v3-ActCode"
+
+CLAIM_STATUS_ACTIVE = "active"
+CLAIM_TYPE_PROFESSIONAL = "professional"
+CLAIM_USE_VALUES = ("claim", "preauthorization")
+RELATED_CLAIM_PRIOR = "prior"
+DOCUMENT_STATUS_FINAL = "final"
+CONDITION_CLINICAL_ACTIVE = "active"
+CONDITION_VERIFICATION_CONFIRMED = "confirmed"
+CONDITION_CATEGORY_ENCOUNTER_DIAGNOSIS = "encounter-diagnosis"
+INSURANCE_FOCAL = "focal"
+ENCOUNTER_CLASS_AMBULATORY = "AMB"
+
 TOKEN_PATTERN = re.compile(r"[\w*]+(?:[-/][\w*]+)*", re.UNICODE)
 
 
@@ -66,7 +90,7 @@ def hcpcs_is_active_on(code: str, service_date: str) -> bool:
     except (TypeError, ValueError):
         return False
     for entry in _entries():
-        if entry["system"] != "http://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets":
+        if entry["system"] != HCPCS_SYSTEM_URI:
             continue
         if entry["code"] != code:
             continue
