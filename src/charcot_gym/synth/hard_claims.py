@@ -1002,15 +1002,14 @@ def _msp_questionnaire_text(
     retired_since = status.removeprefix("retired since ") if not employed else ""
     return "\n".join(
         [
+            "Riverside Oncology Clinic",
             "MEDICARE SECONDARY PAYER QUESTIONNAIRE",
             f"Patient: {patient_name}     MRN: {mrn}",
             f"Is coverage based on current employment? {employed_box}",
             "Is this an employer group plan? [X] Yes [ ] No",
-            f"Retired since: {retired_since or '________________'}",
-            "Employer name: ______________________________",
-            f"                 {employer_name}",
-            "Employer employee count: ____________________",
-            f"                         {employee_count}",
+            f"Retired since: {retired_since or ''}________________",
+            f"Employer name: {employer_name}____________________________",
+            f"Employer employee count: {employee_count}________________",
             "Signature: ______________________________  Date: ______________",
             "Please complete for coordination-of-benefits review.",
         ]

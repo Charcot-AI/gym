@@ -409,11 +409,14 @@ def test_hard_claim_msp_inputs_determine_order_and_age() -> None:
         employed = next(line for line in lines if line.startswith("Is coverage based"))
         assert ("[X] Yes" in employed) is (task.metadata["msp_outcome"] != "retiree")
         retired_since = next(line for line in lines if line.startswith("Retired since:"))
-        assert ("____" not in retired_since) is (task.metadata["msp_outcome"] == "retiree")
-        employer_name_line = lines.index("Employer name: ______________________________")
-        employer_name = lines[employer_name_line + 1].strip()
-        count_line = lines.index("Employer employee count: ____________________")
-        employee_count = int(lines[count_line + 1].strip())
+        retired_value = retired_since.removeprefix("Retired since: ").rstrip("_").strip()
+        assert bool(retired_value) is (task.metadata["msp_outcome"] == "retiree")
+        employer_name_line = next(line for line in lines if line.startswith("Employer name:"))
+        employer_name = employer_name_line.removeprefix("Employer name: ").rstrip("_").strip()
+        count_line = next(line for line in lines if line.startswith("Employer employee count:"))
+        employee_count = int(
+            count_line.removeprefix("Employer employee count: ").rstrip("_").strip()
+        )
         assert employer_name
         employer_primary = task.metadata["msp_outcome"] == "employer" or (
             task.metadata["msp_outcome"] == "small_employer" and employee_count >= 20

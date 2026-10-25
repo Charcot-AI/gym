@@ -659,7 +659,7 @@ def _render_report(  # noqa: PLR0913
     lines.extend(
         [
             "",
-            "Page 1 of 1 | lab",
+            f"Page 1 of 1 | {letterhead[0]}",
             "SYNTHETIC RECORD — NOT A REAL PATIENT",
         ]
     )
