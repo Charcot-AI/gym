@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
-from charcot_gym.synth.claims_generator import generate_claim_task_sets
-from charcot_gym.synth.generator import generate_task_sets
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from charcot_gym.synth.claims_generator import generate_claim_task_sets  # noqa: E402
+from charcot_gym.synth.generator import generate_task_sets  # noqa: E402
+from internal_rewrite import apply_cached_rewrites  # noqa: E402
+
 FAMILIES = {
     "document_fhir": (
         ROOT / "src" / "charcot_gym" / "tasks" / "document_fhir",
@@ -39,6 +44,7 @@ def main() -> int:
             public_tasks, private_tasks = generate_claim_task_sets(private_seed)
         else:
             public_tasks, private_tasks = generate_task_sets(private_seed, family=family)
+            private_tasks = apply_cached_rewrites(private_tasks, family, root=ROOT)
         failures.extend(
             _write_or_check(public_directory, public_tasks, "public", family, args.check)
         )
