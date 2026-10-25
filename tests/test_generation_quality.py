@@ -81,13 +81,14 @@ def _reported_current_values(
     values = {}
     lines = []
     in_previous_results = False
+    is_lab_report = report.lstrip().startswith("Synthetic Laboratory Report")
     for line in report.splitlines():
         previous_result = re.match(
-            r"(?i)^\s*(?:previous|prior|historical) results?\s*:?\s*(.*)$", line
+            r"(?i)^\s*(?:previous|prior|historical|past) results?\s*:?.*$",
+            line,
         )
-        if previous_result is not None:
-            if previous_result.group(1).strip():
-                continue
+        history_heading = is_lab_report and re.match(r"(?i)^\s*history\s*:?\s*$", line)
+        if previous_result is not None or history_heading:
             in_previous_results = True
             continue
         if re.match(r"(?i)^\s*(?:current|today'?s) results?\s*:?\s*$", line):
@@ -335,6 +336,67 @@ def test_all_generated_labs_obey_physiologic_reference_and_precision_rules() -> 
                 current_by_name["ANC"] < thresholds["anc_below"]
                 or current_by_name["platelets"] < thresholds["platelets_below"]
             )
+
+
+def test_lipid_panels_are_coherent_for_current_and_prior_observations() -> None:
+    calibration = json.loads(
+        (ROOT / "src/charcot_gym/synth/calibration.json").read_text(encoding="utf-8")
+    )
+    loinc_by_code = {
+        item["code"]: item
+        for item in json.loads(
+            (ROOT / "src/charcot_gym/data/loinc_subset.json").read_text(encoding="utf-8")
+        )
+    }
+    analytes = calibration["analyte_parameters"]
+    panel = calibration["lipid_panel"]
+    codes = {
+        panel["total_cholesterol_code"],
+        panel["hdl_code"],
+        panel["ldl_code"],
+        panel["triglycerides_code"],
+    }
+    current_panels = 0
+    prior_panels = 0
+    for task in (task for task in generated_tasks() if task.family != "smoke"):
+        report = lab_document_text(task)
+        current_values = _reported_current_values(report, analytes, loinc_by_code)
+        if codes.issubset(current_values):
+            current_panels += 1
+            values = {code: current_values[code][0] for code in codes}
+            _assert_lipid_coherent(task.id, values, panel)
+
+        prior_observations: dict[str, dict[str, float]] = {}
+        for entry in task.initial_state["entry"]:
+            resource = entry["resource"]
+            if resource["resourceType"] != "Observation":
+                continue
+            effective_date = resource["effectiveDateTime"][:10]
+            code = observation_code(resource)
+            if code in codes:
+                prior_observations.setdefault(effective_date, {})[code] = resource["valueQuantity"][
+                    "value"
+                ]
+        for _effective_date, values in prior_observations.items():
+            if codes.issubset(values):
+                if task.family == "document_fhir":
+                    prior_panels += 1
+                _assert_lipid_coherent(task.id, values, panel)
+    assert current_panels > 0
+    assert prior_panels > 0
+
+
+def _assert_lipid_coherent(task_id: str, values: dict[str, float], panel: dict[str, Any]) -> None:
+    expected_total = (
+        values[panel["ldl_code"]]
+        + values[panel["hdl_code"]]
+        + values[panel["triglycerides_code"]] / 5
+    )
+    assert values[panel["triglycerides_code"]] < panel["triglycerides_max_exclusive"]
+    assert (
+        abs(values[panel["total_cholesterol_code"]] - expected_total)
+        <= panel["coherence_tolerance"]
+    ), task_id
 
 
 def test_claims_visit_notes_evidence_and_terminology_are_supported() -> None:

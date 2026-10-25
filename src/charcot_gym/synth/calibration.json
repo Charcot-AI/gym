@@ -38,10 +38,10 @@
     "2951-2": {"name": "sodium", "physiologic_min": 60, "physiologic_max": 200, "precision": 0},
     "2075-0": {"name": "chloride", "physiologic_min": 40, "physiologic_max": 160, "precision": 0},
     "2823-3": {"name": "potassium", "physiologic_min": 1, "physiologic_max": 12, "precision": 1},
-    "2093-3": {"name": "cholesterol", "physiologic_min": 1, "physiologic_max": 1500, "precision": 0},
-    "2085-9": {"name": "HDL", "physiologic_min": 1, "physiologic_max": 300, "precision": 0},
-    "13457-7": {"name": "LDL", "physiologic_min": 1, "physiologic_max": 1000, "precision": 0},
-    "2571-8": {"name": "triglycerides", "physiologic_min": 1, "physiologic_max": 5000, "precision": 0},
+    "2093-3": {"name": "cholesterol", "physiologic_min": 100, "physiologic_max": 1500, "precision": 0},
+    "2085-9": {"name": "HDL", "physiologic_min": 25, "physiologic_max": 300, "precision": 0},
+    "13457-7": {"name": "LDL", "physiologic_min": 40, "physiologic_max": 1000, "precision": 0},
+    "2571-8": {"name": "triglycerides", "physiologic_min": 40, "physiologic_max": 5000, "precision": 0},
     "718-7": {"name": "Hgb", "physiologic_min": 1, "physiologic_max": 30, "precision": 1},
     "4544-3": {"name": "Hct", "physiologic_min": 1, "physiologic_max": 90, "precision": 1},
     "6690-2": {"name": "WBC", "physiologic_min": 0.1, "physiologic_max": 1000, "precision": 1},
@@ -52,6 +52,15 @@
     "1920-8": {"name": "AST", "physiologic_min": 1, "physiologic_max": 20000, "precision": 0},
     "2039-6": {"name": "CEA", "physiologic_min": 0.01, "physiologic_max": 10000, "precision": 1},
     "2857-1": {"name": "PSA", "physiologic_min": 0.01, "physiologic_max": 1000, "precision": 2}
+  },
+  "lipid_panel": {
+    "total_cholesterol_code": "2093-3",
+    "hdl_code": "2085-9",
+    "ldl_code": "13457-7",
+    "triglycerides_code": "2571-8",
+    "triglycerides_max_exclusive": 400,
+    "coherence_tolerance": 5,
+    "prior_history_probability": 0.5
   },
   "hematology_coupling": {
     "hematocrit_factor": {"min": 2.9, "max": 3.1, "precision": 1},

@@ -64,6 +64,7 @@ class _GenerationData:
 @dataclass(frozen=True)
 class _HistoryContext:
     rng: random.Random
+    lipid_rng: random.Random
     scenario: dict[str, Any]
     analytes: list[dict[str, Any]]
     collection_date: date
@@ -307,6 +308,9 @@ def _generate_split(
         histories = _draw_histories(
             _HistoryContext(
                 rng=rng,
+                lipid_rng=random.Random(
+                    task_seed + sum(map(ord, f"{split}:{task_family}")) * 1_000_003
+                ),
                 scenario=scenario,
                 analytes=current_entries,
                 collection_date=collection_date,
@@ -668,13 +672,30 @@ def _render_coding_note(context: _CodingNoteContext) -> str:
         phrasing_key = f"oncology_{variant}" if oncology else scenario_id
         selected_phrasing = rng.choice(phrasing[phrasing_key])
         assessment = [selected_phrasing[f"assessment_{style}"].format(**facts)]
+        if oncology and variant == "hold":
+            if "T45.1X5A" in codes:
+                assessment.append("Count suppression is due to chemotherapy.")
+            if "D70.1" in codes:
+                assessment.append("Chemotherapy-induced neutropenia is present.")
+            if "D69.59" in codes:
+                assessment.append("Chemotherapy-induced thrombocytopenia is present.")
         plan = selected_phrasing[f"plan_{style}"].format(**facts)
+    objective = "; ".join(labs)
+    if "E66.9" in codes:
+        bmi_config = config["bmi_range"]
+        bmi = _sample_value(
+            rng,
+            bmi_config["min"],
+            bmi_config["max"],
+            bmi_config["precision"],
+        )
+        objective += f"; BMI: {_format_value(bmi, bmi_config['precision'])} kg/m²"
     lines = [
         "Outpatient Progress Note",
         "Subjective:",
         subjective,
         "Objective:",
-        "; ".join(labs),
+        objective,
         "Assessment:",
         *[f"- {label}" for label in assessment],
         "Plan:",
@@ -727,6 +748,31 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
             result.extend(cycle_result)
         return result
     settings = calibration["history_results"]
+    lipid_config = calibration["lipid_panel"]
+    lipid_codes = {
+        lipid_config["total_cholesterol_code"],
+        lipid_config["hdl_code"],
+        lipid_config["ldl_code"],
+        lipid_config["triglycerides_code"],
+    }
+    lipid_entries = [entry for entry in analytes if entry["code"] in lipid_codes]
+    prior_lipid_values: dict[str, float | int] = {}
+    prior_lipid_date: str | None = None
+    if lipid_codes.issubset({entry["code"] for entry in lipid_entries}) and (
+        context.lipid_rng.random() < lipid_config["prior_history_probability"]
+    ):
+        prior_lipid_values = _draw_lipid_panel(
+            context.lipid_rng,
+            lipid_entries,
+            scenario["history_rules"],
+            calibration,
+            context.sex,
+            scenario,
+        )
+        days_before = context.lipid_rng.randint(
+            settings["min_days_before"], settings["max_days_before"]
+        )
+        prior_lipid_date = (collection_date - timedelta(days=days_before)).isoformat()
     required_codes = [
         code for code in scenario["history_rules"] if any(item["code"] == code for item in analytes)
     ]
@@ -736,22 +782,50 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
     )
     entries = _select_history_entries(rng, analytes, required_codes, count)
     result = []
+    if prior_lipid_date is not None:
+        result.extend(
+            {
+                "entry": entry,
+                "value": prior_lipid_values[entry["code"]],
+                "date": prior_lipid_date,
+            }
+            for entry in lipid_entries
+        )
     paired_codes = {"718-7", "4544-3"}
+    lipid_values = _draw_lipid_panel(
+        rng,
+        entries,
+        scenario["history_rules"],
+        calibration,
+        context.sex,
+        scenario,
+    )
+    lipid_codes = set(lipid_values)
     paired_date = None
+    lipid_date = None
     if paired_codes.issubset({entry["code"] for entry in entries}):
         days_before = rng.randint(settings["min_days_before"], settings["max_days_before"])
         paired_date = (collection_date - timedelta(days=days_before)).isoformat()
+    if lipid_values:
+        days_before = rng.randint(settings["min_days_before"], settings["max_days_before"])
+        lipid_date = (collection_date - timedelta(days=days_before)).isoformat()
     for entry in entries:
         value_rule = scenario["history_rules"].get(entry["code"])
-        value = _draw_value(
-            rng,
-            entry,
-            value_rule,
-            calibration,
-            context.sex,
-            _is_abnormal_allowed(entry, scenario, calibration),
+        value = (
+            lipid_values[entry["code"]]
+            if entry["code"] in lipid_values
+            else _draw_value(
+                rng,
+                entry,
+                value_rule,
+                calibration,
+                context.sex,
+                _is_abnormal_allowed(entry, scenario, calibration),
+            )
         )
-        if entry["code"] in paired_codes and paired_date is not None:
+        if entry["code"] in lipid_codes and lipid_date is not None:
+            effective = lipid_date
+        elif entry["code"] in paired_codes and paired_date is not None:
             effective = paired_date
         else:
             days_before = rng.randint(settings["min_days_before"], settings["max_days_before"])
@@ -806,10 +880,20 @@ def _draw_current(context: _CurrentContext) -> list[dict[str, Any]]:
     marker_code = context.marker_code
     marker_trend = context.marker_trend
     sex = context.sex
+    lipid_values = _draw_lipid_panel(
+        rng,
+        analytes,
+        scenario["current_rules"],
+        calibration,
+        sex,
+        scenario,
+    )
     result = []
     for entry in analytes:
         rule = scenario["current_rules"].get(entry["code"])
-        if scenario["id"] == "oncology_precycle" and entry["code"] in {
+        if entry["code"] in lipid_values:
+            value = lipid_values[entry["code"]]
+        elif scenario["id"] == "oncology_precycle" and entry["code"] in {
             "751-8",
             "777-3",
         }:
@@ -877,7 +961,17 @@ def _draw_value(  # noqa: PLR0913, PLR0917
     sex: str,
     allow_abnormal: bool,
 ) -> float | int:
-    precision = entry["precision"]
+    lower, upper = _value_bounds(entry, rule, calibration, sex, allow_abnormal)
+    return _sample_value(rng, lower, upper, entry["precision"])
+
+
+def _value_bounds(
+    entry: dict[str, Any],
+    rule: dict[str, Any] | None,
+    calibration: dict[str, Any],
+    sex: str,
+    allow_abnormal: bool,
+) -> tuple[float, float]:
     parameters = calibration["analyte_parameters"][entry["code"]]
     lower = parameters["physiologic_min"]
     upper = parameters["physiologic_max"]
@@ -889,7 +983,85 @@ def _draw_value(  # noqa: PLR0913, PLR0917
         reference = _reference_range(entry, sex, calibration)
         lower = max(lower, reference["min"])
         upper = min(upper, reference["max"])
-    return _sample_value(rng, lower, upper, precision)
+    return lower, upper
+
+
+def _draw_lipid_panel(  # noqa: PLR0913, PLR0917
+    rng: random.Random,
+    entries: list[dict[str, Any]],
+    rules: dict[str, Any],
+    calibration: dict[str, Any],
+    sex: str,
+    scenario: dict[str, Any],
+) -> dict[str, float | int]:
+    config = calibration["lipid_panel"]
+    codes = {
+        "total": config["total_cholesterol_code"],
+        "hdl": config["hdl_code"],
+        "ldl": config["ldl_code"],
+        "triglycerides": config["triglycerides_code"],
+    }
+    by_code = {entry["code"]: entry for entry in entries}
+    if not set(codes.values()).issubset(by_code):
+        return {}
+
+    triglycerides_entry = by_code[codes["triglycerides"]]
+    tg_step = 10 ** (-triglycerides_entry["precision"])
+    tg_upper = config["triglycerides_max_exclusive"] - tg_step
+    triglycerides_rule = rules.get(codes["triglycerides"])
+    if triglycerides_rule is not None:
+        triglycerides_rule = triglycerides_rule.get("by_sex", {}).get(sex, triglycerides_rule)
+    triglycerides_rule = {
+        **(triglycerides_rule or {}),
+        "min": (triglycerides_rule or {}).get(
+            "min",
+            calibration["analyte_parameters"][codes["triglycerides"]]["physiologic_min"],
+        ),
+        "max": min((triglycerides_rule or {}).get("max", tg_upper), tg_upper),
+    }
+
+    total_entry = by_code[codes["total"]]
+    total_bounds = _value_bounds(
+        total_entry,
+        rules.get(codes["total"]),
+        calibration,
+        sex,
+        _is_abnormal_allowed(total_entry, scenario, calibration),
+    )
+    for _ in range(10_000):
+        values = {
+            codes["hdl"]: _draw_value(
+                rng,
+                by_code[codes["hdl"]],
+                rules.get(codes["hdl"]),
+                calibration,
+                sex,
+                _is_abnormal_allowed(by_code[codes["hdl"]], scenario, calibration),
+            ),
+            codes["triglycerides"]: _draw_value(
+                rng,
+                triglycerides_entry,
+                triglycerides_rule,
+                calibration,
+                sex,
+                _is_abnormal_allowed(triglycerides_entry, scenario, calibration),
+            ),
+            codes["ldl"]: _draw_value(
+                rng,
+                by_code[codes["ldl"]],
+                rules.get(codes["ldl"]),
+                calibration,
+                sex,
+                _is_abnormal_allowed(by_code[codes["ldl"]], scenario, calibration),
+            ),
+        }
+        total = (
+            values[codes["ldl"]] + values[codes["hdl"]] + round(values[codes["triglycerides"]] / 5)
+        )
+        if total_bounds[0] <= total <= total_bounds[1]:
+            values[codes["total"]] = total
+            return values
+    raise ValueError("Could not sample a coherent lipid panel within configured bounds.")
 
 
 def _sample_value(rng: random.Random, lower: float, upper: float, precision: int) -> float | int:
