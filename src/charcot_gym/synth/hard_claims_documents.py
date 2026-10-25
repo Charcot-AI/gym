@@ -86,25 +86,30 @@ def _mar_text(
     for row_number, item in enumerate(administrations, 1):
         dose = int(item["dose"])
         lot = f"FIC-{split[0].upper()}{index:03d}-{row_number:02d}"
-        discarded = 0
+        discarded = int(item.get("waste_mg", 0)) if item["container_type"] == "single_dose" else 0
         if item["code"] == "J9171":
             vials = item.get("vials_mg", _vials_for(int(item["dose"])))
-            waste = item.get("waste_mg", _vial_total(int(item["dose"])) - int(item["dose"]))
-            vial_counts = {size: vials.count(size) for size in sorted(set(vials), reverse=True)}
-            vial_sizes = " + ".join(
-                f"{size} mg vial x{count}" for size, count in vial_counts.items()
-            )
-            vial_text = f"{vial_sizes}; lot {lot}"
-            discarded = int(waste)
-        elif item["code"] == "J0897":
-            vial_text = f"120 mg/1.7 mL vial x1; lot {lot}"
-        elif item["code"] == "J2405":
-            vial_text = f"8 mg/4 mL vial x1; lot {lot}"
+            labels = item["container_labels"]
+            vial_lines = [
+                f"    {item['name']} vial: {labels[size]} x{vials.count(size)}"
+                for size in sorted(set(vials), reverse=True)
+            ]
+            if item["container_type"] == "multi_dose":
+                vial_lines[-1] += f", {dose} mg withdrawn"
+            vial_lines[-1] += f"; lot {lot}"
         else:
-            vial_text = f"{dose} mg vial x1; lot {lot}"
+            sizes = item["vials_mg"]
+            labels = item["container_labels"]
+            vial_lines = [
+                f"    {item['name']} vial: {labels[size]} x{sizes.count(size)}"
+                for size in sorted(set(sizes), reverse=True)
+            ]
+            if item["container_type"] == "multi_dose":
+                vial_lines[0] += f", {dose} mg withdrawn"
+            vial_lines[-1] += f"; lot {lot}"
         dose_text = f"{dose} {item['dose_unit']}"
         lines.append(f"{item['name']:<16} {dose_text:<16} {dose_text:<16} {f'{discarded} mg':>12}")
-        lines.append(f"    {item['name']} vials / lot: {vial_text}")
+        lines.extend(vial_lines)
     pharmacist = ("JL", "CM", "RC", "TB")[index % 4]
     lines.extend(
         [
@@ -191,5 +196,22 @@ def _vials_for(dose: int) -> list[int]:
     return list(min(candidates)[2])
 
 
-def _vial_total(dose: int) -> int:
-    return sum(_vials_for(dose))
+def _vials_for_sizes(dose: int, sizes: list[int]) -> list[int]:
+    candidates = []
+    for count in range(1, dose // min(sizes) + 2):
+        for combination in _combinations(sizes, count):
+            total = sum(combination)
+            if total >= dose:
+                candidates.append((total - dose, count, tuple(sorted(combination, reverse=True))))
+    return list(min(candidates)[2])
+
+
+def _combinations(sizes: list[int], count: int) -> list[tuple[int, ...]]:
+    if count == 0:
+        return [()]
+    return [
+        (size, *tail)
+        for size in sizes
+        for tail in _combinations(sizes, count - 1)
+        if size >= (tail[0] if tail else size)
+    ]

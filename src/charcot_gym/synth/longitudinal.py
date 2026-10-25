@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Mapping
 from datetime import date, timedelta
 from typing import Any
 
@@ -33,6 +34,7 @@ def generate_longitudinal_record(  # noqa: PLR0913
     profile: dict[str, Any],
     calibration: dict[str, Any],
     analytes: list[dict[str, Any]],
+    priors: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Create a linked patient record using the configured longitudinal profile."""
     if sex not in {"female", "male"}:
@@ -115,6 +117,7 @@ def generate_longitudinal_record(  # noqa: PLR0913
             profile_kind,
             calibration,
             by_code,
+            priors,
         )
         observations = []
         for code, value in sorted(values.items()):
@@ -188,11 +191,14 @@ def _draw_laboratory_values(  # noqa: PLR0913, PLR0917
     profile_kind: str,
     calibration: dict[str, Any],
     by_code: dict[str, dict[str, Any]],
+    priors: Mapping[str, Any] | None = None,
 ) -> dict[str, float | int]:
     values: dict[str, float | int] = {}
     normal_scenario: dict[str, Any] = {"abnormal_analytes": []}
     lipid_entries = [by_code[code] for code in profile["lipid_codes"]]
-    values.update(_draw_lipid_panel(rng, lipid_entries, {}, calibration, sex, normal_scenario))
+    values.update(
+        _draw_lipid_panel(rng, lipid_entries, {}, calibration, sex, normal_scenario, priors)
+    )
 
     cbc_entries = [by_code[code] for code in profile["cbc_codes"]]
     cbc_values: list[dict[str, Any]] = []
@@ -200,16 +206,16 @@ def _draw_laboratory_values(  # noqa: PLR0913, PLR0917
         code = entry["code"]
         cbc_range = profile.get("cbc_ranges", {}).get(phase, {}).get(code)
         if cbc_range is None:
-            result = _draw_value(rng, entry, None, calibration, sex, False)
+            result = _draw_value(rng, entry, None, calibration, sex, False, priors)
         else:
-            result = _draw_value(rng, entry, cbc_range, calibration, sex, True)
+            result = _draw_value(rng, entry, cbc_range, calibration, sex, True, priors)
         cbc_values.append({"entry": entry, "value": result})
     coupling_scenario = {
         "abnormal_analytes": profile.get("abnormal_analytes", [])
         if profile_kind == "oncology_course"
         else []
     }
-    _enforce_cbc_coupling(cbc_values, rng, calibration, coupling_scenario, sex)
+    _enforce_cbc_coupling(cbc_values, rng, calibration, coupling_scenario, sex, priors)
     values.update({item["entry"]["code"]: item["value"] for item in cbc_values})
 
     for code in profile.get("additional_codes", []):
@@ -224,6 +230,7 @@ def _draw_laboratory_values(  # noqa: PLR0913, PLR0917
             calibration,
             sex,
             value_range is not None,
+            priors,
         )
 
     if profile_kind == "ckd_progression":

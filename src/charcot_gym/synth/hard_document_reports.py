@@ -78,6 +78,8 @@ def _corrected_rows(
             candidate = _rounded_value(current - step, precision)
         if parameters["physiologic_min"] <= candidate <= parameters["physiologic_max"]:
             row["value"] = candidate
+            if row.get("display_unit") == "/µL":
+                row["display_value"] = f"{round(float(candidate) * 1000):,}"
             changed.append(code)
     if not changed:
         raise ValueError("no physiologically valid correction candidate was available")
@@ -157,6 +159,9 @@ def _shift_foreign_value(
 
 def _range_annotation(row: dict[str, Any]) -> tuple[str, str]:
     reference_range = row["reference_range"]
+    display_range = row.get("display_reference_range", reference_range)
+    display_precision = row.get("display_precision", row["precision"])
+    grouped_reference = "display_reference_range" in row
     minimum = reference_range.get("min")
     maximum = reference_range.get("max")
     value = float(row["value"])
@@ -166,18 +171,24 @@ def _range_annotation(row: dict[str, Any]) -> tuple[str, str]:
         flag = "H"
     else:
         flag = "—"
-    if minimum is not None and maximum is not None:
+    display_minimum = display_range.get("min")
+    display_maximum = display_range.get("max")
+    if display_minimum is not None and display_maximum is not None:
         interval = (
-            f"{_format_value(minimum, row['precision'])}\u2013"
-            f"{_format_value(maximum, row['precision'])}"
+            f"{_format_value(display_minimum, display_precision, grouping=grouped_reference)}\u2013"
+            f"{_format_value(display_maximum, display_precision, grouping=grouped_reference)}"
         )
-    elif minimum is not None:
+    elif display_minimum is not None:
         lower = (
-            f"{minimum:g}" if row["code"] == "98979-8" else _format_value(minimum, row["precision"])
+            f"{display_minimum:g}"
+            if row["code"] == "98979-8"
+            else _format_value(display_minimum, display_precision, grouping=grouped_reference)
         )
         interval = f">={lower}"
-    elif maximum is not None:
-        interval = f"<={_format_value(maximum, row['precision'])}"
+    elif display_maximum is not None:
+        interval = (
+            f"<={_format_value(display_maximum, display_precision, grouping=grouped_reference)}"
+        )
     else:
         interval = "—"
     return flag, interval
@@ -241,9 +252,9 @@ def _render_report(  # noqa: PLR0913
     layout_index = REPORT_LAYOUTS.index(layout)
     for row in rows:
         short_name = short_names[row["code"]][layout_index % len(short_names[row["code"]])]
-        result = _format_value(row["value"], row["precision"])
+        result = row.get("display_value", _format_value(row["value"], row["precision"]))
         flag, interval = _range_annotation(row)
-        unit = _HUMAN_UNITS.get(row["unit"], row["unit"])
+        unit = row.get("display_unit", _HUMAN_UNITS.get(row["unit"], row["unit"]))
         lines.append(f"{short_name:<36} {result:>9} {flag:>4}  {unit:<20} {interval:>20}")
         if row["effective"] != collection_date.isoformat():
             lines.append(f"Add-on specimen collected: {row['effective']} — {short_name}")
@@ -286,7 +297,9 @@ _HUMAN_UNITS = {
 }
 
 
-def _format_value(value: float | int, precision: int) -> str:
+def _format_value(value: float | int, precision: int, *, grouping: bool = False) -> str:
+    if grouping:
+        return f"{value:,.{precision}f}"
     return f"{value:.{precision}f}"
 
 
