@@ -166,10 +166,30 @@ def render_page(  # noqa: PLR0913
     draw.text((50, 38), header, fill=25, font=bold)
     width = 98 if dense else 64
     max_lines = 32 if dense else 38
+    text_x = 50 if dense else 92
+
+    def wrap_paragraph(paragraph: str) -> list[str]:
+        paragraph_width = width
+        wrapped = textwrap.wrap(
+            paragraph,
+            width=paragraph_width,
+            break_long_words=False,
+        )
+        while any(draw.textbbox((text_x, 0), line, font=font)[2] > 1200 for line in wrapped):
+            paragraph_width -= 1
+            if paragraph_width < 1:
+                break
+            wrapped = textwrap.wrap(
+                paragraph,
+                width=paragraph_width,
+                break_long_words=False,
+            )
+        return wrapped or [""]
+
     lines = [
         line
         for paragraph in text.splitlines()
-        for line in (textwrap.wrap(paragraph, width=width, break_long_words=False) or [""])
+        for line in wrap_paragraph(paragraph)
         if not line.startswith(("Page ", "SYNTHETIC RECORD"))
     ]
     if len(lines) > max_lines:
@@ -179,7 +199,6 @@ def render_page(  # noqa: PLR0913
     row_pitch = 42 if dense else _LINE_HEIGHT
     for index, line in enumerate(lines):
         y = top + index * row_pitch
-        text_x = 50 if dense else 92
         box = draw.textbbox((text_x, y), line, font=font)
         if box[2] > 1200:
             raise ValueError("wrapped document line exceeds the text area")

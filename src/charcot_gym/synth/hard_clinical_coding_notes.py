@@ -214,7 +214,7 @@ def _render_note(  # noqa: PLR0913, PLR0917
             if dm_phrase:
                 line += f" — {_medication_plan(labs.get('medication_class'))}."
                 lines.append(line)
-        elif "htn_heart_ckd" in packs:
+        if "htn_heart_ckd" in packs:
             lines.append(
                 f"{_phrase('I13.0', rng)}; {_phrase('I50.32', rng)}; "
                 f"{ckd_phrase} — continue lisinopril 20 mg daily."
@@ -224,7 +224,7 @@ def _render_note(  # noqa: PLR0913, PLR0917
                 f"Hypertension at goal; BP {bp[0]}/{bp[1]} — continue lisinopril 20 mg daily."
             )
             lines.append(f"{ckd_phrase}; renal function stable.")
-        else:
+        elif not has_diabetes:
             lines.append(f"{_phrase('I12.9', rng)}; {ckd_phrase} — lisinopril 20 mg daily.")
     elif has_diabetes:
         symptom = details.get("symptom")
@@ -235,10 +235,14 @@ def _render_note(  # noqa: PLR0913, PLR0917
         line += f" — {_medication_plan(labs.get('medication_class'))}."
         lines.append(line)
     if (
-        "htn_ckd" in packs
-        or "dm_htn_ckd" in packs
-        or "already_on_active_problem_list" in scenario.get("traps", [])
-    ) and "htn_ckd_presumption" not in packs and "htn_heart_ckd" not in packs:
+        (
+            "htn_ckd" in packs
+            or "dm_htn_ckd" in packs
+            or "already_on_active_problem_list" in scenario.get("traps", [])
+        )
+        and "htn_ckd_presumption" not in packs
+        and "htn_heart_ckd" not in packs
+    ):
         if has_ckd and ("htn_ckd" in packs or "dm_htn_ckd" in packs):
             lines.append(f"{_phrase('I12.9', rng)}; BP {bp[0]}/{bp[1]} — lisinopril 20 mg daily.")
         else:

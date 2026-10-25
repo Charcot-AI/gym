@@ -347,8 +347,7 @@ class ClaimsVerifier:
                         in {"J9355", "Q5112", "Q5113", "Q5114", "Q5116", "Q5117"}
                     ]
                     check_passed = (
-                        gold.get("trastuzumab_code") is not None
-                        and actual_codes == expected_codes
+                        gold.get("trastuzumab_code") is not None and actual_codes == expected_codes
                     )
                     checks.append(
                         _claim_check(

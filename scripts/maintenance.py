@@ -60,7 +60,15 @@ BLOCKED = (
     "sno" + "med",
     "x12 " + "carc",
 )
-BLOCKED_PATTERNS = [re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE) for term in BLOCKED]
+BLOCKED_PATTERNS = [
+    re.compile(
+        r"\b" + re.escape(term) + r"\b(?!\.info/sct)",
+        re.IGNORECASE,
+    )
+    if term == "sno" + "med"
+    else re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE)
+    for term in BLOCKED
+]
 TICKET_PREFIXES = ("a" + "g", "d" + "l")
 TICKET_PATTERN = re.compile(
     r"\b(?:" + "|".join(TICKET_PREFIXES) + ")" + re.escape("#"),

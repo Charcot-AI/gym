@@ -76,12 +76,16 @@ def _mar_text(
     split: str,
     index: int,
 ) -> str:
+    cycle = next(
+        (item["cycle"] for item in administrations if item.get("cycle")),
+        "continuing",
+    )
     lines = [
         "Riverside Oncology Clinic — Infusion Pharmacy",
         "PHARMACY COMPOUNDING WORKSHEET / MEDICATION ADMINISTRATION RECORD",
         f"Patient: {patient_name}     MRN: {mrn}     Date of service: {service_date.isoformat()}",
         f"Height: {height_cm} cm     Weight: {weight_kg:.1f} kg     Mosteller BSA: {bsa:.3f} m²",
-        f"Cycle: {next((item['cycle'] for item in administrations if item.get('cycle')), 'continuing')}",
+        f"Cycle: {cycle}",
         "",
         f"{'Drug':<16} {'Ordered dose':<16} {'Prepared dose':<16} {'Discarded':>12}",
         "-" * 64,
@@ -95,12 +99,15 @@ def _mar_text(
             labels = item["container_labels"]
             vial_lines = [
                 f"    {item['name']} vial: {labels[size]} x{vials.count(size)}"
-                + (f"; NDC {item['ndc_by_size'][size]}" if item.get("ndc_by_size", {}).get(size) else "")
+                + (
+                    f"; NDC {item['ndc_by_size'][size]}"
+                    if item.get("ndc_by_size", {}).get(size)
+                    else ""
+                )
                 for size in sorted(set(vials), reverse=True)
             ]
             if item["container_type"] == "multi_dose":
                 vial_lines[-1] += f", {dose} mg withdrawn"
-            vial_lines[-1] += f"; lot {lot}"
         else:
             sizes = item["vials_mg"]
             labels = item["container_labels"]
@@ -113,8 +120,7 @@ def _mar_text(
         vial_size = max(item.get("vials_mg", [item["container_sizes_mg"][0]]))
         ndc = item.get("ndc_by_size", {}).get(vial_size)
         if ndc:
-            if item["code"] != "J9171":
-                vial_lines[0] += f"; NDC {ndc}"
+            vial_lines[0] += f"; NDC {ndc}"
         if item.get("cycle"):
             vial_lines[-1] += f"; cycle {item['cycle']}"
         vial_lines[-1] += f"; lot {lot}"

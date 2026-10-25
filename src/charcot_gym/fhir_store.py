@@ -207,7 +207,13 @@ class FHIRStore:
             if field not in resource:
                 raise ValueError(f"{resource_type}.{field} is required")
         if resource_type == "Observation" and not any(
-            field in resource for field in ("valueQuantity", "valueString", "valueInteger")
+            field in resource
+            for field in (
+                "valueCodeableConcept",
+                "valueQuantity",
+                "valueString",
+                "valueInteger",
+            )
         ):
             raise ValueError("Observation requires a value[x] field")
         if resource_type in {"Observation", "Condition"} and not _has_code(resource.get("code")):

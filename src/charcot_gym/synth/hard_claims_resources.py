@@ -69,9 +69,7 @@ def _claim(
             diagnosis_by_code[code],
             hcpcs,
             len(items) + 1,
-            ndc=administration.get("ndc_by_size", {}).get(
-                administration.get("vials_mg", [None])[0]
-            )
+            ndc=administration.get("ndc_by_size", {}).get(administration.get("vials_mg", [None])[0])
             if plan.get("ndc_reporting_required")
             else None,
         )

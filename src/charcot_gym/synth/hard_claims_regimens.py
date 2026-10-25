@@ -6,8 +6,7 @@ import random
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-
-TRASTUZUMAB_PRODUCTS = {
+TRASTUZUMAB_PRODUCTS: dict[str, dict[str, Any]] = {
     "J9355": {
         "brand": "Herceptin",
         "generic": "trastuzumab",
@@ -130,6 +129,7 @@ def _regimen(  # noqa: PLR0913
                 "container_type": "single_dose",
                 "container_sizes_mg": [120],
                 "container_labels": {120: "120 mg/1.7 mL single-dose vial"},
+                "ndc_by_size": {120: "55513-730-01"},
             }
         )
     if trastuzumab_product is not None and trastuzumab_dose_mg is not None:
