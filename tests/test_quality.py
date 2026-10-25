@@ -24,5 +24,12 @@ def test_baseline_scores_match_expectation(baseline: Baseline) -> None:
     assert all(math.isfinite(score) and 0 <= score <= 1 for score in scores)
     if baseline.expectation == "zero":
         assert max(scores) == 0
-    else:
+    elif baseline.expectation == "below_one":
         assert max(scores) < 1
+    else:
+        mean = sum(scores) / len(scores)
+        assert 0 < mean < 1
+
+
+def test_baseline_names_are_unique() -> None:
+    assert len({baseline.name for baseline in BASELINES}) == len(BASELINES)
