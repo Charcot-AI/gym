@@ -7,6 +7,7 @@ import hashlib
 import itertools
 import json
 import random
+from collections.abc import Mapping
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -22,8 +23,9 @@ from charcot_gym.synth.hard_document_reports import (
     _render_report,
     _row_from_observation,
 )
-from charcot_gym.synth.lab_values import _reference_range
+from charcot_gym.synth.lab_values import _draw_value, _reference_range
 from charcot_gym.synth.longitudinal import generate_longitudinal_record
+from charcot_gym.synth.priors import choose_panels, validate_priors
 from charcot_gym.terminology import LOINC_SYSTEM_URI, UCUM_SYSTEM_URI, V3_ACT_CODE_SYSTEM_URI
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -72,8 +74,11 @@ TASK_DATE = date(2026, 1, 1)
 
 def generate_hard_document_fhir_task_sets(
     private_seed: int,
+    priors: Mapping[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Build 21 public and 9 private Hard document-FHIR tasks."""
+    if priors is not None:
+        priors = validate_priors(priors)
     calibration = _read_json(PACKAGE_ROOT / "synth" / "calibration.json")
     hard_config = _read_json(PACKAGE_ROOT / "synth" / "hard_document_fhir.json")
     profiles = _read_json(PACKAGE_ROOT / "synth" / "longitudinal.json")["profiles"]
@@ -99,7 +104,14 @@ def generate_hard_document_fhir_task_sets(
             "public", public_seed, profiles, calibration, analytes, public_traps, hard_config
         ),
         _generate_split(
-            "private", private_seed, profiles, calibration, analytes, private_traps, hard_config
+            "private",
+            private_seed,
+            profiles,
+            calibration,
+            analytes,
+            private_traps,
+            hard_config,
+            priors,
         ),
     )
 
@@ -112,6 +124,7 @@ def _generate_split(  # noqa: PLR0913, PLR0917
     analytes: list[dict[str, Any]],
     trap_pairs: list[tuple[str, str]],
     hard_config: dict[str, Any],
+    priors: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     profile_choices = [
         profile_name for profile_name, count in PROFILE_COUNTS[split].items() for _ in range(count)
@@ -128,6 +141,7 @@ def _generate_split(  # noqa: PLR0913, PLR0917
             calibration=calibration,
             analytes=analytes,
             hard_config=hard_config,
+            priors=priors,
         )
         for index in range(1, len(profile_choices) + 1)
     ]
@@ -144,6 +158,7 @@ def _generate_task(  # noqa: PLR0913
     calibration: dict[str, Any],
     analytes: list[dict[str, Any]],
     hard_config: dict[str, Any],
+    priors: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     rng = random.Random(seed)
     sex = rng.choice(("female", "male"))
@@ -160,6 +175,7 @@ def _generate_task(  # noqa: PLR0913
         profile=profile,
         calibration=calibration,
         analytes=analytes,
+        priors=priors,
     )
     patient = resources[0]
     given, family = rng.choice(NAMES)
@@ -188,6 +204,19 @@ def _generate_task(  # noqa: PLR0913
         _row_from_observation(observation, entries_by_code, TASK_DATE, reference_ranges)
         for observation in latest_observations
     ]
+    if priors is not None:
+        current_rows.extend(
+            _supplemental_panel_rows(
+                rng,
+                analytes,
+                calibration,
+                sex,
+                priors,
+                {row["code"] for row in current_rows},
+                reference_ranges,
+                set(hard_config["short_names"]),
+            )
+        )
     if "cancelled_test" in traps:
         current_rows = [row for row in current_rows if row["code"] != "2823-3"]
     if "alternative_unit" in traps:
@@ -448,6 +477,42 @@ def _document_reference(
             }
         ],
     }
+
+
+def _supplemental_panel_rows(  # noqa: PLR0913, PLR0917
+    rng: random.Random,
+    analytes: list[dict[str, Any]],
+    calibration: dict[str, Any],
+    sex: str,
+    priors: Mapping[str, Any],
+    existing_codes: set[str],
+    reference_ranges: dict[str, dict[str, float]],
+    supported_codes: set[str],
+) -> list[dict[str, Any]]:
+    selected_panels = choose_panels(rng, analytes, calibration, priors)
+    entries_by_code = {entry["code"]: entry for entry in analytes}
+    rows = []
+    for panel in selected_panels:
+        for entry in analytes:
+            code = entry["code"]
+            if (
+                entry.get("panel") != panel
+                or code in existing_codes
+                or entry.get("reference_range") is None
+                or code not in calibration["analyte_parameters"]
+                or code not in supported_codes
+            ):
+                continue
+            value = _draw_value(rng, entry, None, calibration, sex, False, priors)
+            observation = {
+                "code": {"coding": [{"code": code}]},
+                "valueQuantity": {"value": value, "code": entry["unit"]},
+            }
+            rows.append(
+                _row_from_observation(observation, entries_by_code, TASK_DATE, reference_ranges)
+            )
+            existing_codes.add(code)
+    return rows
 
 
 def _task_encounter(patient_id: str, split: str, index: int) -> dict[str, Any]:
