@@ -58,6 +58,6 @@ def test_private_tasks_are_listed_only_when_explicitly_loaded() -> None:
     client = TestClient(create_app(private_tasks))
     listed = client.get("/tasks")
     assert listed.status_code == 200
-    assert len(listed.json()) == 72
+    assert len(listed.json()) == 81
     assert all(task["split"] == "private" for task in listed.json())
     assert all("gold" not in task and "metadata" not in task for task in listed.json())
