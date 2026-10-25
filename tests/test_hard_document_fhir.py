@@ -17,8 +17,15 @@ ROOT = Path(__file__).resolve().parents[1]
 PRIVATE_TASKS = ROOT / "private" / "tasks"
 LOINC_SYSTEM = "http://loinc.org"
 UCUM_SYSTEM = "http://unitsofmeasure.org"
-LOINC_PATTERN = re.compile(r"\bLOINC\s*[|= ]*\s*(\d{3,5}-\d+)\b", re.IGNORECASE)
+HARD_CONFIG = json.loads(
+    (ROOT / "src" / "charcot_gym" / "synth" / "hard_document_fhir.json").read_text(encoding="utf-8")
+)
+SHORT_NAME_TO_CODE = {
+    name: code for code, names in HARD_CONFIG["short_names"].items() for name in names
+}
+LOINC_CODE_PATTERN = re.compile(r"\b\d{1,5}-\d\b")
 VALUE_PATTERN = re.compile(r"(-?\d+(?:\.\d+)?)\s+([^\s|;]+)")
+RANGE_PATTERN = re.compile(r"\(([^()]*)\)")
 COLLECTION_PATTERN = re.compile(
     r"(?:Collected|Specimen collected|Specimen date)\s*:?\s*(\d{4}-\d{2}-\d{2})",
     re.IGNORECASE,
@@ -119,24 +126,31 @@ def _parse_report_rows(text: str) -> list[dict[str, Any]]:
     fallback_date = header_collection.group(1) if header_collection else ""
     rows = []
     for line in text.splitlines():
-        code_match = LOINC_PATTERN.search(line)
-        if code_match is None:
-            continue
-        value_match = VALUE_PATTERN.search(line[code_match.end() :])
-        if value_match is None:
-            continue
-        value_text, unit = value_match.groups()
-        value_number = float(value_text)
-        row_collection = COLLECTION_PATTERN.search(line)
-        rows.append(
-            {
-                "code": code_match.group(1),
-                "value": int(value_number) if value_number.is_integer() else value_number,
-                "value_text": value_text,
-                "unit": unit,
-                "effective": row_collection.group(1) if row_collection else fallback_date,
-            }
-        )
+        content = line.strip().strip("|").strip()
+        for short_name in sorted(SHORT_NAME_TO_CODE, key=len, reverse=True):
+            if not content.startswith(short_name):
+                continue
+            remainder = content[len(short_name) :].lstrip(" |:")
+            value_match = VALUE_PATTERN.search(remainder)
+            if value_match is None:
+                continue
+            value_text, unit = value_match.groups()
+            value_number = float(value_text)
+            range_match = RANGE_PATTERN.search(remainder)
+            flag_match = re.search(r"\s([HL])\s+\(", remainder)
+            row_collection = COLLECTION_PATTERN.search(line)
+            rows.append(
+                {
+                    "code": SHORT_NAME_TO_CODE[short_name],
+                    "value": int(value_number) if value_number.is_integer() else value_number,
+                    "value_text": value_text,
+                    "unit": unit,
+                    "range": range_match.group(1) if range_match else "",
+                    "flag": flag_match.group(1) if flag_match else "",
+                    "effective": row_collection.group(1) if row_collection else fallback_date,
+                }
+            )
+            break
     return rows
 
 
@@ -288,7 +302,7 @@ def test_ignoring_corrected_reports_scores_below_one() -> None:
             if report["role"] not in {"current", "corrected_original"}:
                 continue
             observations.extend(_rows_as_observations(task, _parse_report_rows(report["text"])))
-        assert _score(task, observations) < 1.0
+        assert _score(task, observations) == 0.0
 
 
 def test_duplicating_already_ingested_results_scores_below_one() -> None:
@@ -298,7 +312,7 @@ def test_duplicating_already_ingested_results_scores_below_one() -> None:
         observations = _oracle_observations(task)
         report = next(report for report in _reports(task) if report["role"] == "already_ingested")
         observations.extend(_rows_as_observations(task, _parse_report_rows(report["text"])))
-        assert _score(task, observations) < 1.0
+        assert 0.0 < _score(task, observations) < 1.0
 
 
 def test_gold_is_derivable_from_matching_reports_and_printed_collection_dates() -> None:
@@ -421,3 +435,62 @@ def test_wheel_and_sdist_contain_no_private_or_internal_paths(tmp_path: Path) ->
         source_paths = archive.getnames()
     for path in [*wheel_paths, *source_paths]:
         assert not {"private", "internal"} & set(PurePosixPath(path).parts), path
+
+
+def test_recording_wrong_patient_report_scores_zero() -> None:
+    for task in hard_tasks():
+        if "wrong_patient" not in task.metadata["trap_types"]:
+            continue
+        observations = _oracle_observations(task)
+        report = next(report for report in _reports(task) if report["role"] == "wrong_patient")
+        observations.extend(_rows_as_observations(task, _parse_report_rows(report["text"])))
+        assert _score(task, observations) == 0.0
+
+
+def test_hard_forbidden_results_have_safety_checks_and_standard_oracle_is_unchanged() -> None:
+    for task in hard_tasks():
+        assert "forbidden" in task.gold
+        assert {item["reason"] for item in task.gold["forbidden"]} <= {
+            "superseded",
+            "foreign_patient",
+        }
+    standard = next(
+        task
+        for task in load_tasks()
+        if task.family == "document_fhir" and task.difficulty == "standard"
+    )
+    assert "forbidden" not in standard.gold
+    environment = ClinicalEnv([standard])
+    environment.reset(standard.id)
+    for observation in _oracle_observations(standard):
+        environment.step(ToolCall(name="fhir_create", arguments={"resource": observation}))
+    environment.step(Submit(answer=None))
+    score = environment.score()
+    assert score.value == 1.0
+    assert "superseded_value_recorded" not in {check.name for check in score.checks}
+    assert "foreign_patient_result_recorded" not in {check.name for check in score.checks}
+
+
+def test_hard_reports_use_short_names_ranges_and_no_loinc_identifiers() -> None:
+    loinc_entries = json.loads(
+        (ROOT / "src" / "charcot_gym" / "data" / "loinc_subset.json").read_text(encoding="utf-8")
+    )
+    displays = {entry["display"] for entry in loinc_entries}
+    texts = [report["text"] for task in hard_tasks() for report in _reports(task)]
+    for text in texts:
+        assert LOINC_CODE_PATTERN.search(text) is None
+        assert all(display.casefold() not in text.casefold() for display in displays)
+        for row in _parse_report_rows(text):
+            assert row["range"]
+            lower, upper = (float(value) for value in row["range"].split("\u2013"))
+            expected_flag = "L" if row["value"] < lower else "H" if row["value"] > upper else ""
+            assert row["flag"] == expected_flag
+    assert any("Fasting status: unknown" in text for text in texts)
+    assert any("Comment:" in text for text in texts)
+    assert len(SHORT_NAME_TO_CODE) == sum(
+        len(names) for names in HARD_CONFIG["short_names"].values()
+    )
+    for code, names in HARD_CONFIG["short_names"].items():
+        for name in names:
+            matches = terminology_search(LOINC_SYSTEM, name, limit=100)
+            assert [entry["code"] for entry in matches] == [code], (name, matches)

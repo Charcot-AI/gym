@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from charcot_gym.synth.generator import NAMES
+from charcot_gym.synth.lab_values import _reference_range
 from charcot_gym.synth.longitudinal import generate_longitudinal_record
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,7 @@ def generate_hard_document_fhir_task_sets(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Build 21 public and 9 private Hard document-FHIR tasks."""
     calibration = _read_json(PACKAGE_ROOT / "synth" / "calibration.json")
+    hard_config = _read_json(PACKAGE_ROOT / "synth" / "hard_document_fhir.json")
     profiles = _read_json(PACKAGE_ROOT / "synth" / "longitudinal.json")["profiles"]
     analytes = _read_json(PACKAGE_ROOT / "data" / "loinc_subset.json")
     for entry in analytes:
@@ -85,8 +87,12 @@ def generate_hard_document_fhir_task_sets(
     random.Random(_namespaced_seed(public_seed, "trap-pairs")).shuffle(trap_pairs)
     public_traps, private_traps = trap_pairs[:21], trap_pairs[21:]
     return (
-        _generate_split("public", public_seed, profiles, calibration, analytes, public_traps),
-        _generate_split("private", private_seed, profiles, calibration, analytes, private_traps),
+        _generate_split(
+            "public", public_seed, profiles, calibration, analytes, public_traps, hard_config
+        ),
+        _generate_split(
+            "private", private_seed, profiles, calibration, analytes, private_traps, hard_config
+        ),
     )
 
 
@@ -97,6 +103,7 @@ def _generate_split(  # noqa: PLR0913, PLR0917
     calibration: dict[str, Any],
     analytes: list[dict[str, Any]],
     trap_pairs: list[tuple[str, str]],
+    hard_config: dict[str, Any],
 ) -> list[dict[str, Any]]:
     profile_choices = [
         profile_name for profile_name, count in PROFILE_COUNTS[split].items() for _ in range(count)
@@ -112,6 +119,7 @@ def _generate_split(  # noqa: PLR0913, PLR0917
             traps=trap_pairs[index - 1],
             calibration=calibration,
             analytes=analytes,
+            hard_config=hard_config,
         )
         for index in range(1, len(profile_choices) + 1)
     ]
@@ -127,6 +135,7 @@ def _generate_task(  # noqa: PLR0913
     traps: tuple[str, str],
     calibration: dict[str, Any],
     analytes: list[dict[str, Any]],
+    hard_config: dict[str, Any],
 ) -> dict[str, Any]:
     rng = random.Random(seed)
     sex = rng.choice(("female", "male"))
@@ -159,9 +168,16 @@ def _generate_task(  # noqa: PLR0913
 
     current_encounter = _task_encounter(patient_id, split, index)
     entries_by_code = {entry["code"]: entry for entry in analytes}
+    reference_ranges = {
+        code: hard_config.get("reference_ranges", {}).get(
+            code, _reference_range(entry, sex, calibration)
+        )
+        for code, entry in entries_by_code.items()
+        if entry.get("reference_range") is not None
+    }
     latest_observations = _latest_observations(resources)
     current_rows = [
-        _row_from_observation(observation, entries_by_code, TASK_DATE)
+        _row_from_observation(observation, entries_by_code, TASK_DATE, reference_ranges)
         for observation in latest_observations
     ]
     if "cancelled_test" in traps:
@@ -195,7 +211,7 @@ def _generate_task(  # noqa: PLR0913
     layout_offset = (index - 1 + (split == "private")) % len(REPORT_LAYOUTS)
     report_specs: list[tuple[str, str, list[dict[str, Any]], date, str, str]] = []
     for group_index, group_rows in enumerate((rows_a, rows_b)):
-        accession = f"H2-{split.upper()}-{index:03d}-{group_index + 1}"
+        accession = f"H2-{split.upper()}-{index:03d}-{chr(ord('A') + group_index)}"
         report_specs.append(
             (
                 f"document-hard-{split}-{index:03d}-{group_index + 1}",
@@ -219,6 +235,8 @@ def _generate_task(  # noqa: PLR0913
             accession=accession,
             layout=layout,
             rows=rows,
+            short_names=hard_config["short_names"],
+            comments_by_layout=hard_config.get("comments_by_layout", {}),
             cancelled="cancelled_test" in traps and resource_id.endswith("-1"),
         )
         document = _document_reference(resource_id, patient_id, current_encounter["id"], text)
@@ -240,6 +258,8 @@ def _generate_task(  # noqa: PLR0913
             accession=correction_accession,
             layout=correction_layout,
             rows=corrected_group_rows,
+            short_names=hard_config["short_names"],
+            comments_by_layout=hard_config.get("comments_by_layout", {}),
             corrected=True,
         )
         report_resources.append(
@@ -253,7 +273,7 @@ def _generate_task(  # noqa: PLR0913
         report_roles[corrected_id] = "corrected"
 
     if "already_ingested" in traps:
-        prior_rows, prior_date = _prior_rows(latest_observations, entries_by_code)
+        prior_rows, prior_date = _prior_rows(latest_observations, entries_by_code, reference_ranges)
         prior_id = f"document-hard-{split}-{index:03d}-prior"
         prior_text = _render_report(
             patient_name=f"{given} {family}",
@@ -264,15 +284,30 @@ def _generate_task(  # noqa: PLR0913
             accession=f"H2-{split.upper()}-{index:03d}-PRIOR",
             layout=REPORT_LAYOUTS[(layout_offset + 2) % len(REPORT_LAYOUTS)],
             rows=prior_rows,
+            short_names=hard_config["short_names"],
+            comments_by_layout=hard_config.get("comments_by_layout", {}),
         )
         report_resources.append(
             _document_reference(prior_id, patient_id, current_encounter["id"], prior_text)
         )
         report_roles[prior_id] = "already_ingested"
 
+    foreign_rows = []
     if "wrong_patient" in traps:
         wrong_given, wrong_family = NAMES[(NAMES.index((given, family)) + 1) % len(NAMES)]
         wrong_patient_id = f"document-hard-{split}-{index:03d}-mismatch"
+        lipid_codes = {
+            calibration["lipid_panel"][key]
+            for key in (
+                "ldl_code",
+                "hdl_code",
+                "triglycerides_code",
+                "total_cholesterol_code",
+            )
+        }
+        foreign_rows = _foreign_patient_rows(
+            [row for row in base_rows if row["code"] in lipid_codes], calibration
+        )
         wrong_text = _render_report(
             patient_name=f"{wrong_given} {wrong_family}",
             birth_date=birth_date - timedelta(days=365 * 7),
@@ -281,7 +316,9 @@ def _generate_task(  # noqa: PLR0913
             collection_date=collection_date,
             accession=f"H2-{split.upper()}-{index:03d}-OTHER",
             layout=REPORT_LAYOUTS[(layout_offset + 1) % len(REPORT_LAYOUTS)],
-            rows=base_rows[: min(4, len(base_rows))],
+            rows=foreign_rows,
+            short_names=hard_config["short_names"],
+            comments_by_layout=hard_config.get("comments_by_layout", {}),
         )
         report_resources.append(
             _document_reference(
@@ -303,6 +340,35 @@ def _generate_task(  # noqa: PLR0913
         }
         for row in expected_rows
     ]
+    forbidden = [
+        {
+            "code": row["code"],
+            "value": row["value"],
+            "unit": row["unit"],
+            "effective": row["effective"],
+            "reason": "superseded",
+        }
+        for row in current_rows
+        if row["code"] in corrected_codes
+    ]
+    forbidden.extend(
+        {
+            "code": row["code"],
+            "value": row["value"],
+            "unit": row["unit"],
+            "effective": row["effective"],
+            "reason": "foreign_patient",
+        }
+        for row in foreign_rows
+    )
+    expected_signatures = {
+        (row["code"], row["value"], row["unit"], row["effective"]) for row in expected
+    }
+    if any(
+        (row["code"], row["value"], row["unit"], row["effective"]) in expected_signatures
+        for row in forbidden
+    ):
+        raise ValueError(f"forbidden result overlaps expected gold in {split}-{index:03d}")
     all_resources = [*resources, current_encounter, *report_resources]
     all_ids = [resource["id"] for resource in all_resources]
     if len(all_ids) != len(set(all_ids)):
@@ -329,6 +395,7 @@ def _generate_task(  # noqa: PLR0913
         },
         "gold": {
             "expected": expected,
+            "forbidden": forbidden,
             "patient_id": patient_id,
             "preexisting_ids": all_ids,
         },
@@ -362,6 +429,7 @@ def _row_from_observation(
     observation: dict[str, Any],
     entries_by_code: dict[str, dict[str, Any]],
     effective_date: date,
+    reference_ranges: dict[str, dict[str, float]],
 ) -> dict[str, Any]:
     quantity = observation["valueQuantity"]
     code = observation["code"]["coding"][0]["code"]
@@ -372,6 +440,7 @@ def _row_from_observation(
         "value": quantity["value"],
         "unit": quantity["code"],
         "precision": entry["precision"],
+        "reference_range": reference_ranges[code],
         "effective": effective_date.isoformat(),
     }
 
@@ -382,6 +451,9 @@ def _convert_hemoglobin_to_g_per_l(rows: list[dict[str, Any]]) -> None:
             row["value"] = round(float(row["value"]) * 10)
             row["unit"] = "g/L"
             row["precision"] = 0
+            row["reference_range"] = {
+                key: value * 10 for key, value in row["reference_range"].items()
+            }
             return
     raise ValueError("hemoglobin is required for the alternative-unit trap")
 
@@ -418,6 +490,7 @@ def _corrected_rows(
 def _prior_rows(
     latest_observations: list[dict[str, Any]],
     entries_by_code: dict[str, dict[str, Any]],
+    reference_ranges: dict[str, dict[str, float]],
 ) -> tuple[list[dict[str, Any]], date]:
     prior_date = date.fromisoformat(latest_observations[0]["effectiveDateTime"])
     prior_rows = [
@@ -427,11 +500,73 @@ def _prior_rows(
             "value": observation["valueQuantity"]["value"],
             "unit": observation["valueQuantity"]["code"],
             "precision": entries_by_code[observation["code"]["coding"][0]["code"]]["precision"],
+            "reference_range": reference_ranges[observation["code"]["coding"][0]["code"]],
             "effective": observation["effectiveDateTime"],
         }
         for observation in latest_observations[:3]
     ]
     return prior_rows, prior_date
+
+
+def _foreign_patient_rows(
+    rows: list[dict[str, Any]], calibration: dict[str, Any]
+) -> list[dict[str, Any]]:
+    foreign_rows = [dict(row) for row in rows]
+    by_code = {row["code"]: row for row in foreign_rows}
+    lipid_config = calibration["lipid_panel"]
+    ldl_code = lipid_config["ldl_code"]
+    hdl_code = lipid_config["hdl_code"]
+    triglycerides_code = lipid_config["triglycerides_code"]
+    total_code = lipid_config["total_cholesterol_code"]
+    if not {ldl_code, hdl_code, triglycerides_code, total_code} <= set(by_code):
+        raise ValueError("wrong-patient report must contain the complete lipid panel")
+    _shift_foreign_value(by_code[ldl_code], calibration, 17)
+    _shift_foreign_value(by_code[hdl_code], calibration, 7)
+    _shift_foreign_value(by_code[triglycerides_code], calibration, 10)
+    total = round(
+        float(by_code[ldl_code]["value"])
+        + float(by_code[hdl_code]["value"])
+        + round(float(by_code[triglycerides_code]["value"]) / 5)
+    )
+    total_parameters = calibration["analyte_parameters"][total_code]
+    if total < total_parameters["physiologic_min"] or total > total_parameters["physiologic_max"]:
+        raise ValueError("foreign-patient lipid panel is outside physiologic bounds")
+    by_code[total_code]["value"] = total
+    return foreign_rows
+
+
+def _shift_foreign_value(
+    row: dict[str, Any], calibration: dict[str, Any], requested_delta: float
+) -> None:
+    parameters = calibration["analyte_parameters"][row["code"]]
+    precision = row["precision"]
+    step = 10 ** (-precision)
+    current = float(row["value"])
+    delta = requested_delta
+    if row["code"] == calibration["lipid_panel"]["triglycerides_code"]:
+        delta = min(
+            requested_delta,
+            calibration["lipid_panel"]["triglycerides_max_exclusive"] - step - current,
+        )
+    if delta <= 0:
+        delta = -requested_delta
+    candidate = _rounded_value(current + delta, precision)
+    if candidate > parameters["physiologic_max"] or candidate < parameters["physiologic_min"]:
+        candidate = _rounded_value(current - requested_delta, precision)
+    if candidate < parameters["physiologic_min"] or candidate > parameters["physiologic_max"]:
+        raise ValueError(f"could not create foreign-patient value for {row['code']}")
+    row["value"] = candidate
+
+
+def _range_annotation(row: dict[str, Any]) -> tuple[str, str]:
+    reference_range = row["reference_range"]
+    minimum = reference_range["min"]
+    maximum = reference_range["max"]
+    value = float(row["value"])
+    flag = " L" if value < minimum else " H" if value > maximum else ""
+    lower = _format_value(minimum, row["precision"])
+    upper = _format_value(maximum, row["precision"])
+    return flag, f" ({lower}\u2013{upper})"
 
 
 def _render_report(  # noqa: PLR0913
@@ -444,6 +579,8 @@ def _render_report(  # noqa: PLR0913
     accession: str,
     layout: str,
     rows: list[dict[str, Any]],
+    short_names: dict[str, list[str]],
+    comments_by_layout: dict[str, str],
     corrected: bool = False,
     cancelled: bool = False,
 ) -> str:
@@ -459,7 +596,7 @@ def _render_report(  # noqa: PLR0913
                 f"Collected: {collection_date.isoformat()}",
                 f"Reported: {report_date.isoformat()}",
                 "TEST RESULTS",
-                "Test | LOINC | Result",
+                "Test | Result",
             ]
         )
     elif layout == "portal_summary":
@@ -485,21 +622,25 @@ def _render_report(  # noqa: PLR0913
                 "FINAL RESULTS",
             ]
         )
+    layout_index = REPORT_LAYOUTS.index(layout)
     for row in rows:
+        short_name = short_names[row["code"]][layout_index % len(short_names[row["code"]])]
         result = _format_value(row["value"], row["precision"])
+        flag, range_text = _range_annotation(row)
         suffix = ""
         if row["effective"] != collection_date.isoformat():
             suffix = f" | Add-on collected: {row['effective']}"
         if layout == "reference_table":
-            lines.append(
-                f"| {row['display']} | LOINC {row['code']} | {result} {row['unit']}{suffix} |"
-            )
+            lines.append(f"| {short_name} | {result} {row['unit']}{flag}{range_text}{suffix} |")
         elif layout == "portal_summary":
-            lines.append(f"{row['display']} (LOINC {row['code']}): {result} {row['unit']}{suffix}")
+            lines.append(f"{short_name}: {result} {row['unit']}{flag}{range_text}{suffix}")
         else:
-            lines.append(f"{row['display']} / LOINC {row['code']}: {result} {row['unit']}{suffix}")
+            lines.append(f"{short_name}  {result} {row['unit']}{flag}{range_text}{suffix}")
+    comment = comments_by_layout.get(layout)
+    if comment:
+        lines.append(comment)
     if cancelled:
-        lines.append("Potassium (LOINC 2823-3): Specimen hemolyzed; test not performed.")
+        lines.append("Potassium: specimen hemolyzed; test not performed.")
     return "\n".join(lines)
 
 
