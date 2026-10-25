@@ -28,7 +28,12 @@ def _coverage(
     msp_text = None
     if outcome:
         employer_size = 45 if outcome == "employer" else (12 if outcome == "small_employer" else 45)
-        plan_id = "healthplan-northstar" if outcome == "employer" else "healthplan-medicare"
+        employer_plan = (
+            "healthplan-northstar-select"
+            if outcome == "employer" and "ndc_reporting" in packs
+            else "healthplan-northstar"
+        )
+        plan_id = employer_plan if outcome == "employer" else "healthplan-medicare"
         status = "employed" if outcome != "retiree" else f"retired since {service_date.year - 6}"
         employer_name = (
             "Northstar Manufacturing"
@@ -41,11 +46,13 @@ def _coverage(
         employer_id = f"coverage-employer-{split}-{index:03d}"
         medicare_id = f"coverage-medicare-{split}-{index:03d}"
         coverage_entries = [
-            {"resource": _coverage_resource(employer_id, patient_id, "healthplan-northstar")},
+            {"resource": _coverage_resource(employer_id, patient_id, employer_plan)},
             {"resource": _coverage_resource(medicare_id, patient_id, "healthplan-medicare")},
         ]
         primary_id = employer_id if outcome == "employer" else medicare_id
         secondary_id = medicare_id if outcome == "employer" else employer_id
+        if "ndc_reporting" in packs and outcome == "employer":
+            plan_id = "healthplan-northstar-select"
         insurance = [
             {
                 "sequence": 1,
@@ -63,6 +70,8 @@ def _coverage(
         plan_id = "healthplan-northstar"
     else:
         plan_id = "healthplan-cedar"
+    if "ndc_reporting" in packs:
+        plan_id = "healthplan-northstar-select"
     coverage_id = f"coverage-{split}-{index:03d}"
     coverage_entries = [{"resource": _coverage_resource(coverage_id, patient_id, plan_id)}]
     insurance = [

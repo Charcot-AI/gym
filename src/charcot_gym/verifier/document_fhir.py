@@ -134,11 +134,30 @@ def _document_match(
     hard_task: bool = False,
 ) -> bool:
     coding = resource.get("code", {}).get("coding", [])
-    quantity = resource.get("valueQuantity")
-    if not isinstance(quantity, dict):
-        return False
-    value = _decimal(quantity.get("value"))
-    expected_value = _decimal(expected.get("value"))
+    expected_code = expected.get("value_code")
+    if expected_code is not None:
+        value_concept = resource.get("valueCodeableConcept")
+        result_matches = isinstance(value_concept, dict) and any(
+            isinstance(item, dict)
+            and item.get("system") == expected.get("value_system")
+            and item.get("code") == expected_code
+            for item in value_concept.get("coding", [])
+        )
+    else:
+        quantity = resource.get("valueQuantity")
+        value = _decimal(quantity.get("value")) if isinstance(quantity, dict) else None
+        expected_value = _decimal(expected.get("value"))
+        result_matches = (
+            isinstance(quantity, dict)
+            and value is not None
+            and value == expected_value
+            and quantity.get("system") == UCUM_SYSTEM_URI
+            and quantity.get("code") == expected.get("unit")
+            and (
+                expected.get("comparator") is None
+                or quantity.get("comparator") == expected.get("comparator")
+            )
+        )
     effective = str(resource.get("effectiveDateTime", "")).split("T", maxsplit=1)[0]
     status = resource.get("status")
     return (
@@ -150,14 +169,7 @@ def _document_match(
             and item.get("code") == expected.get("code")
             for item in coding
         )
-        and value is not None
-        and value == expected_value
-        and quantity.get("system") == UCUM_SYSTEM_URI
-        and quantity.get("code") == expected.get("unit")
-        and (
-            expected.get("comparator") is None
-            or quantity.get("comparator") == expected.get("comparator")
-        )
+        and result_matches
         and resource.get("subject", {}).get("reference") == f"Patient/{patient_id}"
         and effective == expected.get("effective")
     )

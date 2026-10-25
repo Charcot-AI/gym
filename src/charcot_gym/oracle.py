@@ -194,8 +194,9 @@ def _conditions(task: Task) -> list[ToolCall]:
 
 
 def _observations(task: Task) -> list[dict[str, Any]]:
-    return [
-        {
+    observations = []
+    for item in task.gold["expected"]:
+        observation = {
             "resourceType": "Observation",
             "status": "final",
             "code": {
@@ -208,12 +209,25 @@ def _observations(task: Task) -> list[dict[str, Any]]:
             },
             "subject": {"reference": f"Patient/{task.gold['patient_id']}"},
             "effectiveDateTime": item["effective"],
-            "valueQuantity": {
+        }
+        if "value_code" in item:
+            observation["valueCodeableConcept"] = {
+                "coding": [
+                    {
+                        "system": item["value_system"],
+                        "code": item["value_code"],
+                    }
+                ]
+            }
+        else:
+            quantity = {
                 "value": item["value"],
                 "unit": item["unit"],
                 "system": "http://unitsofmeasure.org",
                 "code": item["unit"],
-            },
-        }
-        for item in task.gold["expected"]
-    ]
+            }
+            if "comparator" in item:
+                quantity["comparator"] = item["comparator"]
+            observation["valueQuantity"] = quantity
+        observations.append(observation)
+    return observations

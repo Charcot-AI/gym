@@ -15,6 +15,10 @@ def _regimen(  # noqa: PLR0913
     *,
     rng: random.Random,
     include_cyclophosphamide: bool = False,
+    trastuzumab_product: dict[str, Any] | None = None,
+    trastuzumab_dose_mg: int | None = None,
+    trastuzumab_cycle: int | None = None,
+    trastuzumab_presentation: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, int]]:
     breast = "C50.911" if index % 2 else "C50.912"
     cancer_code = "C61" if regimen == "metastatic_prostate" else breast
@@ -41,7 +45,11 @@ def _regimen(  # noqa: PLR0913
             "container_labels": docetaxel_container_labels,
         }
     ]
-    if regimen == "early_breast" and (index % 2 == 0 or include_cyclophosphamide):
+    if (
+        regimen == "early_breast"
+        and trastuzumab_product is None
+        and (index % 2 == 0 or include_cyclophosphamide)
+    ):
         cyclophosphamide_dose = int(
             Decimal(str(600 * bsa / 5)).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * 5
         )
@@ -76,8 +84,33 @@ def _regimen(  # noqa: PLR0913
                 "container_type": "single_dose",
                 "container_sizes_mg": [120],
                 "container_labels": {120: "120 mg/1.7 mL single-dose vial"},
+                "ndc_by_size": {120: "55513-730-01"},
             }
         )
+    if trastuzumab_product is not None and trastuzumab_dose_mg is not None:
+        code = trastuzumab_product["code"]
+        presentation = trastuzumab_presentation or 150
+        ndc = trastuzumab_product["ndc_150" if presentation == 150 else "ndc_420"]
+        administrations.append(
+            {
+                "code": code,
+                "name": f"{trastuzumab_product['brand']} ({trastuzumab_product['generic']})",
+                "dose": trastuzumab_dose_mg,
+                "dose_unit": "mg",
+                "diagnosis_sequence": 2,
+                "container_type": "single_dose" if presentation == 150 else "multi_dose",
+                "container_sizes_mg": [presentation],
+                "container_labels": {
+                    presentation: (
+                        f"{presentation} mg "
+                        f"{'single-dose' if presentation == 150 else 'multi-dose'} vial"
+                    )
+                },
+                "ndc_by_size": {presentation: ndc},
+                "cycle": trastuzumab_cycle,
+            }
+        )
+        diagnosis_by_code[code] = 2
     administrations.append(
         {
             "code": "J2405",
@@ -88,6 +121,7 @@ def _regimen(  # noqa: PLR0913
             "container_type": "multi_dose",
             "container_sizes_mg": [40],
             "container_labels": {40: "40 mg/20 mL multi-dose vial"},
+            "ndc_by_size": {40: "16729-298-05"},
         }
     )
     return administrations, diagnoses, diagnosis_by_code
