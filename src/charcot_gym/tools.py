@@ -175,7 +175,16 @@ CORE_TOOLS = ToolRegistry()
 CORE_TOOLS.register(
     ToolSpec(
         name="fhir_search",
-        description="Search FHIR resources by type and simple parameters.",
+        description=(
+            "Search FHIR resources by type. Optional subject matches subject.reference when "
+            "present and has no effect on resource types without that element. "
+            "Optional patient matches subject.reference for Observation, Condition, Encounter, "
+            "DocumentReference, and MedicationAdministration; beneficiary.reference for Coverage; "
+            "or patient.reference for Claim and ClaimResponse. References accept Patient/<id> "
+            "or a bare patient id. Optional code matches any coding.code, or system|code to "
+            "match both coding.system and coding.code. Applicable non-empty parameters are ANDed; "
+            "empty-string parameters are ignored."
+        ),
         parameters={
             "type": "object",
             "properties": {
