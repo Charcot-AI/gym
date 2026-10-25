@@ -215,6 +215,10 @@ def test_hard_claim_prompts_sop_plan_rules_and_remittance_do_not_leak() -> None:
             "In diagnosisSequence, point each drug line only to the diagnosis the drug treats; "
             "point supportive drugs such as antiemetics to Z51.11."
         ) in sop
+        assert (
+            "The pharmacy/MAR record documents container type, dose withdrawn, and any discarded "
+            "amount. Bill from it; do not change existing chart resources."
+        ) in sop
         assert (f"relationship `prior` ({RELATED_CLAIM_SYSTEM_URI})") in sop
         _, rules = document(task, "Healthplan rules")
         assert not re.search(r"\b(?:age|employees?|employee count|group size)\b", rules, re.I)
