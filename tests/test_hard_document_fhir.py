@@ -144,7 +144,13 @@ def _parse_report_rows(text: str) -> list[dict[str, Any]]:
             value_number = float(value_text.removeprefix("<").replace(",", ""))
             if unit == "/µL":
                 value_number /= 1000
-            interval = fields[4].strip()
+            range_text = fields[4].strip()
+            interval = range_text
+            if unit == "/µL":
+                lower, upper = (
+                    float(value.replace(",", "")) / 1000 for value in range_text.split("\u2013")
+                )
+                interval = f"{lower:g}\u2013{upper:g}"
             rows.append(
                 {
                     "code": SHORT_NAME_TO_CODE[short_name],
@@ -152,6 +158,7 @@ def _parse_report_rows(text: str) -> list[dict[str, Any]]:
                     "value_text": value_text,
                     "unit": human_units.get(unit, unit),
                     "range": interval,
+                    "range_text": range_text,
                     "flag": fields[2].strip() if fields[2].strip() != "—" else "",
                     "effective": add_on_dates.get(short_name, fallback_date),
                     "comparator": comparator,
@@ -332,6 +339,12 @@ def test_new_traps_are_visible_and_match_canonical_gold() -> None:
             )
             assert row["unit"] == "10*3/uL"
             assert row["value"] == int(row["value_text"].replace(",", "")) / 1000
+            display_range = [
+                float(value.replace(",", "")) for value in row["range_text"].split("\u2013")
+            ]
+            canonical_range = [float(value) for value in row["range"].split("\u2013")]
+            assert all("," in value for value in row["range_text"].split("\u2013"))
+            assert display_range == [value * 1000 for value in canonical_range]
         if "below_detection_limit" in task.metadata["trap_types"]:
             assert any(
                 name in report_text
