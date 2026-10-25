@@ -194,7 +194,7 @@ def _healthplan_rules(_store: FHIRStore, arguments: Mapping[str, Any]) -> dict[s
     healthplan_id = arguments["healthplan_id"]
     for plan in config["plans"]:
         if plan["healthplan_id"] == healthplan_id:
-            return {key: value for key, value in plan.items()}
+            return {key: value for key, value in plan.items() if key != "hard_only"}
     raise ValueError(f"unknown healthplan_id: {healthplan_id}")
 
 

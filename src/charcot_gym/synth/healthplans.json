@@ -3,6 +3,7 @@
     {
       "healthplan_id": "healthplan-northstar",
       "name": "Northstar Community Health",
+      "cms_jw_jz": true,
       "fee_schedule": {
         "G0438": "147.00",
         "G0439": "116.00",
@@ -25,7 +26,8 @@
         "J9217": "98.00",
         "J9263": "0.14",
         "J9267": "0.22",
-        "J9075": "0.036"
+        "J9075": "0.036",
+        "J0897": "13.00"
       },
       "prior_auth_required": [
         "J9171",
@@ -115,6 +117,7 @@
     {
       "healthplan_id": "healthplan-cedar",
       "name": "Cedar Ridge Health",
+      "cms_jw_jz": false,
       "fee_schedule": {
         "G0438": "153.00",
         "G0439": "121.00",
@@ -137,7 +140,8 @@
         "J9217": "105.00",
         "J9263": "0.16",
         "J9267": "0.24",
-        "J9075": "0.039"
+        "J9075": "0.039",
+        "J0897": "12.50"
       },
       "prior_auth_required": [
         "J9171",
@@ -332,6 +336,30 @@
         "G0438": 1,
         "J7050": 8,
         "J1815": 200
+      }
+    },
+    {
+      "healthplan_id": "healthplan-medicare",
+      "name": "Medicare",
+      "hard_only": true,
+      "cms_jw_jz": true,
+      "fee_schedule": {
+        "G0438": "180.00",
+        "G0439": "130.00",
+        "J9171": "1.25",
+        "J9075": "0.036",
+        "J9000": "0.72",
+        "J2405": "0.22",
+        "J0897": "14.25"
+      },
+      "prior_auth_required": [],
+      "coverage_rules": {
+        "G0438": [
+          "Z00.00"
+        ]
+      },
+      "max_units_per_day": {
+        "default": 1000
       }
     }
   ],
