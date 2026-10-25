@@ -446,11 +446,35 @@ def test_leaderboard_filters_partial_runs_and_outputs_selected_split(tmp_path: P
         "families",
         "organizations",
         "models",
+        "submissions",
     }
     assert result["difficulty"] == "standard"
     assert result["modality"] == "text"
     assert result["families"] == ["claims"]
     assert result["organizations"] == {"Healthplan Research": 2}
+    assert result["submissions"] == [
+        {
+            "model": "openai/example",
+            "submitter": "A. Example",
+            "organization": "Healthplan Research",
+            "submitted": "2026-04-01",
+            "availability": "api",
+            "partial": False,
+            "ranked": True,
+        },
+        {
+            "model": "anthropic/example",
+            "submitter": "B. Example",
+            "organization": "Healthplan Research",
+            "submitted": "2026-04-02",
+            "availability": "unreleased",
+            "partial": True,
+            "ranked": False,
+        },
+    ]
+    assert "| Model | Submitter | Organization | Submitted | Availability | Partial | Ranked |" in (
+        tmp_path / "leaderboard" / "leaderboard.md"
+    ).read_text()
     assert len(result["models"]) == 1
     model = result["models"][0]
     assert model["provider"] == "openai"
