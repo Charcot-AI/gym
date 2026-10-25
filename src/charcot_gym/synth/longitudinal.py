@@ -70,7 +70,7 @@ def generate_longitudinal_record(  # noqa: PLR0913
     required_codes.update(profile.get("additional_codes", []))
     if profile_kind == "ckd_progression":
         required_codes.add("2160-0")
-    if profile_kind == "diabetes_course":
+    if "hba1c" in profile:
         required_codes.update({profile["hba1c"]["code"], profile["hba1c"]["glucose_code"]})
     missing_codes = required_codes - set(by_code)
     if missing_codes:
@@ -237,7 +237,7 @@ def _draw_laboratory_values(  # noqa: PLR0913, PLR0917
         if not profile["egfr"]["physiologic_min"] <= egfr <= profile["egfr"]["physiologic_max"]:
             raise ValueError("generated eGFR is outside configured physiological bounds")
         values[profile["egfr"]["code"]] = egfr
-    elif profile_kind == "diabetes_course":
+    if "hba1c" in profile:
         config = profile["hba1c"]
         entry = by_code[config["code"]]
         nominal = config["start"] + (config["end"] - config["start"]) * index / (
