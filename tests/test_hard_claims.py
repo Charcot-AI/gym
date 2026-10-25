@@ -318,9 +318,14 @@ def test_hard_claim_regimens_conditions_doses_units_vials_and_links_are_derivabl
         dose_line = next(line for line in mar_lines if line.startswith("Docetaxel"))
         vial_lines = [line for line in mar_lines if line.startswith("    Docetaxel vial:")]
         discarded = int(re.search(r"(\d+) mg$", dose_line).group(1))
-        assert vial_lines and all("multi-dose vial" in line for line in vial_lines)
-        assert f"{docetaxel_dose:g} mg withdrawn" in vial_lines[-1]
-        assert discarded == 0
+        assert vial_lines
+        if all("multi-dose vial" in line for line in vial_lines):
+            assert f"{docetaxel_dose:g} mg withdrawn" in vial_lines[-1]
+            assert discarded == 0
+        else:
+            assert all("single-dose vial" in line for line in vial_lines)
+            assert all("withdrawn" not in line for line in vial_lines)
+            assert discarded > 0
         for name in administrations:
             presentation = next(line for line in mar_lines if line.startswith(f"    {name} vial:"))
             assert "single-dose vial" in presentation or "multi-dose vial" in presentation
@@ -554,6 +559,19 @@ def test_wrong_date_fee_lookup_returns_another_effective_row_and_scores_partiall
     assert 0.0 < score.value < 1.0
 
 
+def test_docetaxel_container_type_is_drawn_per_task() -> None:
+    counts: Counter[str] = Counter()
+    tasks = hard_claims()
+    for task in tasks:
+        _, mar = document(task, "Pharmacy/MAR record")
+        lines = [line for line in mar.splitlines() if line.startswith("    Docetaxel vial:")]
+        types = {"multi_dose" if "multi-dose vial" in line else "single_dose" for line in lines}
+        assert len(types) == 1
+        counts[types.pop()] += 1
+    assert counts["single_dose"] > counts["multi_dose"] > 0
+    assert abs(counts["single_dose"] / len(tasks) - 2 / 3) < 0.2
+
+
 def test_hard_claim_hcpcs_codes_and_modifiers_are_active() -> None:
     for task in hard_claims():
         claim = task.gold["expected_claim"]
@@ -573,16 +591,40 @@ def test_hard_claim_hcpcs_codes_and_modifiers_are_active() -> None:
         if any(item_code(item) == "J2405" for item in task.gold["expected_claim"]["item"]):
             assert "ondansetron" in task.metadata["dailymed_vial_source_urls"]
         _, mar = document(task, "Pharmacy/MAR record")
-        assert "80 mg/4 mL multi-dose vial" in mar or "160 mg/8 mL multi-dose vial" in mar
         if any(item_code(item) == "J2405" for item in task.gold["expected_claim"]["item"]):
             assert "40 mg/20 mL multi-dose vial" in mar
+        docetaxel_lines = [
+            line for line in mar.splitlines() if line.startswith("    Docetaxel vial:")
+        ]
+        assert docetaxel_lines
+        assert all(
+            re.search(
+                r"(?:20 mg/1 mL single-dose|(?:80 mg/4 mL|160 mg/8 mL) "
+                r"(?:single-dose|multi-dose)) vial",
+                line,
+            )
+            for line in docetaxel_lines
+        )
         if any(item_code(item) == "J9075" for item in task.gold["expected_claim"]["item"]):
             assert re.search(
-                r"(?:500 mg/mL|1 g/2 mL|2 g/4 mL) single-dose vial",
+                r"(?:500 mg|1 g|2 g) single-dose vial \(powder\)",
                 mar,
             )
         if any(item_code(item) == "J0897" for item in task.gold["expected_claim"]["item"]):
             assert "120 mg/1.7 mL single-dose vial" in mar
+
+
+def test_hard_modifier_checks_and_denials_match_gold() -> None:
+    for task in hard_claims():
+        expected_items = task.gold["expected_claim"]["item"]
+        has_jw = any("JW" in modifiers(item) for item in expected_items)
+        has_jz = any("JZ" in modifiers(item) for item in expected_items)
+        checks = set(task.gold.get("critical_checks", []))
+        assert ("jw_line" in checks) == has_jw
+        assert ("jz_line" in checks) == has_jz
+        hidden_error = task.gold.get("denial_errors", {}).get("hidden")
+        if hidden_error == "missing_jw_line":
+            assert has_jw, task.id
 
 
 def test_critical_claim_baselines_score_zero() -> None:

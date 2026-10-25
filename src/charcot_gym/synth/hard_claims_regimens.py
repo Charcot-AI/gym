@@ -2,21 +2,33 @@
 
 from __future__ import annotations
 
+import random
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 
-def _regimen(
+def _regimen(  # noqa: PLR0913
     regimen: str,
     index: int,
     docetaxel_dose: int,
     bsa: float,
+    *,
+    rng: random.Random,
     include_cyclophosphamide: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, int]]:
     breast = "C50.911" if index % 2 else "C50.912"
     cancer_code = "C61" if regimen == "metastatic_prostate" else breast
     diagnoses = ["Z51.11", cancer_code]
     diagnosis_by_code = {"J9171": 2, "J2405": 1, "J9075": 2}
+    docetaxel_container_type = "single_dose" if rng.random() < 2 / 3 else "multi_dose"
+    docetaxel_container_sizes = (
+        [20, 80, 160] if docetaxel_container_type == "single_dose" else [80, 160]
+    )
+    docetaxel_container_labels = {
+        20: "20 mg/1 mL single-dose vial",
+        80: f"80 mg/4 mL {docetaxel_container_type.replace('_', '-')} vial",
+        160: f"160 mg/8 mL {docetaxel_container_type.replace('_', '-')} vial",
+    }
     administrations: list[dict[str, Any]] = [
         {
             "code": "J9171",
@@ -24,12 +36,9 @@ def _regimen(
             "dose": docetaxel_dose,
             "dose_unit": "mg",
             "diagnosis_sequence": 2,
-            "container_type": "multi_dose",
-            "container_sizes_mg": [80, 160],
-            "container_labels": {
-                80: "80 mg/4 mL multi-dose vial",
-                160: "160 mg/8 mL multi-dose vial",
-            },
+            "container_type": docetaxel_container_type,
+            "container_sizes_mg": docetaxel_container_sizes,
+            "container_labels": docetaxel_container_labels,
         }
     ]
     if regimen == "early_breast" and (index % 2 == 0 or include_cyclophosphamide):
@@ -46,9 +55,9 @@ def _regimen(
                 "container_type": "single_dose",
                 "container_sizes_mg": [500, 1000, 2000],
                 "container_labels": {
-                    500: "500 mg/mL single-dose vial",
-                    1000: "1 g/2 mL single-dose vial",
-                    2000: "2 g/4 mL single-dose vial",
+                    500: "500 mg single-dose vial (powder)",
+                    1000: "1 g single-dose vial (powder)",
+                    2000: "2 g single-dose vial (powder)",
                 },
             }
         )
