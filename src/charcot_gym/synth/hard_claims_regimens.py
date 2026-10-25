@@ -6,51 +6,6 @@ import random
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-TRASTUZUMAB_PRODUCTS: dict[str, dict[str, Any]] = {
-    "J9355": {
-        "brand": "Herceptin",
-        "generic": "trastuzumab",
-        "ndc_150": "50242-132-01",
-        "ndc_420": None,
-        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=492dbdb2-077e-4064-bff3-372d6af0a7a2",
-    },
-    "Q5112": {
-        "brand": "Ontruzant",
-        "generic": "trastuzumab-dttb",
-        "ndc_150": "78206-147-01",
-        "ndc_420": "78206-148-01",
-        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=ce2a2492-85e3-4b0a-872a-047f44e4203d",
-    },
-    "Q5113": {
-        "brand": "Herzuma",
-        "generic": "trastuzumab-pkrb",
-        "ndc_150": "63459-303-43",
-        "ndc_420": "63459-305-47",
-        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=ae71c003-883a-4cd8-ad50-e8cc9a54e971",
-    },
-    "Q5114": {
-        "brand": "Ogivri",
-        "generic": "trastuzumab-dkst",
-        "ndc_150": "83257-001-11",
-        "ndc_420": "83257-003-01",
-        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=b6465b44-a6dd-f99c-d009-6851cf05169c",
-    },
-    "Q5116": {
-        "brand": "Trazimera",
-        "generic": "trastuzumab-qyyp",
-        "ndc_150": "0069-0308-01",
-        "ndc_420": "0069-0305-01",
-        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=b9c5e894-27d2-4245-a653-df986fed3c56",
-    },
-    "Q5117": {
-        "brand": "Kanjinti",
-        "generic": "trastuzumab-anns",
-        "ndc_150": "55513-141-01",
-        "ndc_420": "55513-132-01",
-        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=9a94f5b2-b84e-4987-8ea1-c4346db5a5fa",
-    },
-}
-
 
 def _regimen(  # noqa: PLR0913
     regimen: str,

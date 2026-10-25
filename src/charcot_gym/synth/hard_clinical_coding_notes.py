@@ -25,11 +25,6 @@ PHRASING_POOLS: dict[str, list[str]] = {
         "diabetic polyneuropathy",
         "type 2 diabetes with distal symmetric neuropathy",
     ],
-    "I13.0": [
-        "hypertensive heart and kidney disease with heart failure",
-        "hypertension with heart failure and CKD",
-        "hypertensive heart and chronic kidney disease with HF",
-    ],
     "I50.32": [
         "chronic diastolic heart failure",
         "chronic HFpEF",
@@ -38,7 +33,6 @@ PHRASING_POOLS: dict[str, list[str]] = {
     "I69.351": [
         "residual right-sided hemiplegia after cerebral infarction",
         "right hemiparesis persists after prior stroke",
-        "right dominant-side weakness remains following stroke",
     ],
     "Z86.73": [
         "remote cerebral infarction without residual deficit",
@@ -216,9 +210,10 @@ def _render_note(  # noqa: PLR0913, PLR0917
                 lines.append(line)
         if "htn_heart_ckd" in packs:
             lines.append(
-                f"{_phrase('I13.0', rng)}; {_phrase('I50.32', rng)}; "
-                f"{ckd_phrase} — continue lisinopril 20 mg daily."
+                f"Hypertension at goal; BP {bp[0]}/{bp[1]} mmHg; continue lisinopril 20 mg daily."
             )
+            lines.append(_phrase("I50.32", rng))
+            lines.append(ckd_phrase)
         elif "htn_ckd_presumption" in packs:
             lines.append(
                 f"Hypertension at goal; BP {bp[0]}/{bp[1]} — continue lisinopril 20 mg daily."

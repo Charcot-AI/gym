@@ -29,7 +29,7 @@ def _coverage(
     if outcome:
         employer_size = 45 if outcome == "employer" else (12 if outcome == "small_employer" else 45)
         employer_plan = (
-            "healthplan-northstar-ndc"
+            "healthplan-northstar-select"
             if outcome == "employer" and "ndc_reporting" in packs
             else "healthplan-northstar"
         )
@@ -52,7 +52,7 @@ def _coverage(
         primary_id = employer_id if outcome == "employer" else medicare_id
         secondary_id = medicare_id if outcome == "employer" else employer_id
         if "ndc_reporting" in packs and outcome == "employer":
-            plan_id = "healthplan-northstar-ndc"
+            plan_id = "healthplan-northstar-select"
         insurance = [
             {
                 "sequence": 1,
@@ -71,7 +71,7 @@ def _coverage(
     else:
         plan_id = "healthplan-cedar"
     if "ndc_reporting" in packs:
-        plan_id = "healthplan-northstar-ndc"
+        plan_id = "healthplan-northstar-select"
     coverage_id = f"coverage-{split}-{index:03d}"
     coverage_entries = [{"resource": _coverage_resource(coverage_id, patient_id, plan_id)}]
     insurance = [

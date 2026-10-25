@@ -12,6 +12,7 @@ from charcot_gym.terminology import (
     HCPCS_SYSTEM_URI,
     ICD10CM_SYSTEM_URI,
     NDC_SYSTEM_URI,
+    TRASTUZUMAB_PRODUCTS,
     hcpcs_is_active_on,
 )
 from charcot_gym.verifier.contracts import (
@@ -336,15 +337,13 @@ class ClaimsVerifier:
                     expected_codes = [
                         _product_code(item, hcpcs_system_aliases)
                         for item in expected_items
-                        if _product_code(item, hcpcs_system_aliases)
-                        in {"J9355", "Q5112", "Q5113", "Q5114", "Q5116", "Q5117"}
+                        if _product_code(item, hcpcs_system_aliases) in TRASTUZUMAB_PRODUCTS
                     ]
                     actual_codes = [
                         _product_code(item, hcpcs_system_aliases)
                         for item in actual_items
                         if isinstance(item, Mapping)
-                        and _product_code(item, hcpcs_system_aliases)
-                        in {"J9355", "Q5112", "Q5113", "Q5114", "Q5116", "Q5117"}
+                        and _product_code(item, hcpcs_system_aliases) in TRASTUZUMAB_PRODUCTS
                     ]
                     check_passed = (
                         gold.get("trastuzumab_code") is not None and actual_codes == expected_codes
@@ -484,21 +483,21 @@ def _ndc_reporting_matches(
     if not isinstance(expected_items, list) or not isinstance(actual_items, list):
         return False
 
-    def signatures(items: list[Any]) -> list[tuple[Any, ...]]:
-        return sorted(
-            (
-                _product_code(item, {HCPCS_SYSTEM_URI}),
-                item.get("quantity", {}).get("value"),
-                item.get("servicedDate"),
-                _ndc_code(item),
-            )
-            for item in items
-            if isinstance(item, Mapping)
-        )
+    def signatures(items: list[Any]) -> list[tuple[str, str]]:
+        result = []
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            code = _product_code(item, {HCPCS_SYSTEM_URI})
+            if code is not None:
+                result.append((code, _ndc_code(item) or ""))
+        return sorted(result)
 
     actual = signatures(actual_items)
     expected = signatures(expected_items)
-    return actual == expected and all(signature[3] for signature in actual)
+    return actual == expected and all(
+        ndc is not None and len(ndc) == 11 and ndc.isdigit() for _, ndc in actual
+    )
 
 
 def _ndc_code(item: Mapping[str, Any]) -> str | None:

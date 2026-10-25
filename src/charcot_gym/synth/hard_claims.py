@@ -22,7 +22,7 @@ from charcot_gym.synth.hard_claims_documents import (
     _visit_text,
 )
 from charcot_gym.synth.hard_claims_portal import _add_authorization, _coverage, _fee_rows
-from charcot_gym.synth.hard_claims_regimens import TRASTUZUMAB_PRODUCTS, _regimen
+from charcot_gym.synth.hard_claims_regimens import _regimen
 from charcot_gym.synth.hard_claims_resources import (
     RELATED_PRIOR,
     _claim,
@@ -46,6 +46,7 @@ from charcot_gym.terminology import (
     HL7_HCPCS_SYSTEM_URI,
     ICD10CM_SYSTEM_URI,
     RELATED_CLAIM_SYSTEM_URI,
+    TRASTUZUMAB_PRODUCTS,
 )
 
 ROOT = Path(__file__).parent
@@ -274,7 +275,7 @@ def _task(
     trastuzumab_cycle = None
     trastuzumab_presentation = None
     if "biosimilar_code" in packs:
-        product_codes = ["J9355", "Q5112", "Q5113", "Q5114", "Q5116", "Q5117"]
+        product_codes = list(TRASTUZUMAB_PRODUCTS)
         trastuzumab_code = product_codes[((index - 1) // 3) % len(product_codes)]
         trastuzumab_product = {
             **TRASTUZUMAB_PRODUCTS[trastuzumab_code],
@@ -396,7 +397,7 @@ def _task(
     entries.extend(
         [
             {"resource": _organization("healthplan-northstar", "Northstar Healthplan")},
-            {"resource": _organization("healthplan-northstar-ndc", "Northstar NDC Network")},
+            {"resource": _organization("healthplan-northstar-select", "Northstar Select")},
             {"resource": _organization("healthplan-cedar", "Cedar Ridge Health")},
             {"resource": _organization("healthplan-medicare", "Medicare")},
             {"resource": _organization(provider_id, "Riverside Oncology Clinic")},
