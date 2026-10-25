@@ -9,7 +9,6 @@ from importlib.resources import files
 from typing import Any
 
 from charcot_gym.fhir_store import FHIRStore
-from charcot_gym.synth.hard_claims import HARD_MEDICARE_PLAN
 from charcot_gym.task import Task
 from charcot_gym.terminology import terminology_search
 
@@ -195,9 +194,7 @@ def _healthplan_rules(_store: FHIRStore, arguments: Mapping[str, Any]) -> dict[s
     healthplan_id = arguments["healthplan_id"]
     for plan in config["plans"]:
         if plan["healthplan_id"] == healthplan_id:
-            return {key: value for key, value in plan.items()}
-    if healthplan_id == "healthplan-medicare":
-        return dict(HARD_MEDICARE_PLAN)
+            return {key: value for key, value in plan.items() if key != "hard_only"}
     raise ValueError(f"unknown healthplan_id: {healthplan_id}")
 
 
