@@ -119,7 +119,7 @@ def _mar_text(
                 vial_lines[0] += f", {dose} mg withdrawn"
         vial_size = max(item.get("vials_mg", [item["container_sizes_mg"][0]]))
         ndc = item.get("ndc_by_size", {}).get(vial_size)
-        if ndc:
+        if ndc and not any(f"NDC {ndc}" in line for line in vial_lines):
             vial_lines[0] += f"; NDC {ndc}"
         if item.get("cycle"):
             vial_lines[-1] += f"; cycle {item['cycle']}"

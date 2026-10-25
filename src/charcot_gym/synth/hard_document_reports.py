@@ -9,6 +9,33 @@ from typing import Any
 HEMOGLOBIN_ALTERNATIVE_UNIT = "g/L"
 
 REPORT_LAYOUTS = ("reference_table", "portal_summary", "fax_printout")
+HEMOGLOBIN_SEX_AGE_RANGES = {
+    ("female", True): {"min": 12.0, "max": 16.0},
+    ("male", True): {"min": 13.0, "max": 17.0},
+    ("female", False): {"min": 11.5, "max": 15.5},
+    ("male", False): {"min": 12.5, "max": 16.5},
+}
+
+
+def _sex_age_reference_table(unit: str) -> str:
+    if unit not in {"g/dL", "g/L"}:
+        raise ValueError(f"unsupported hemoglobin display unit: {unit}")
+    scale = 10 if unit == "g/L" else 1
+
+    def format_bound(value: float) -> str:
+        return f"{value * scale:.0f}" if scale == 10 else f"{value:.1f}"
+
+    intervals = (
+        ("female", "<65", HEMOGLOBIN_SEX_AGE_RANGES[("female", True)]),
+        ("male", "<65", HEMOGLOBIN_SEX_AGE_RANGES[("male", True)]),
+        ("female", ">=65", HEMOGLOBIN_SEX_AGE_RANGES[("female", False)]),
+        ("male", ">=65", HEMOGLOBIN_SEX_AGE_RANGES[("male", False)]),
+    )
+    formatted = "; ".join(
+        f"{sex} age {age} years {format_bound(bounds['min'])}-{format_bound(bounds['max'])}"
+        for sex, age, bounds in intervals
+    )
+    return f"Hemoglobin ({unit}): {formatted}\n"
 
 
 def _latest_observations(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -193,7 +220,7 @@ def _range_annotation(row: dict[str, Any]) -> tuple[str, str]:
         )
     else:
         interval = "—"
-    return flag, interval
+    return row.get("display_flag", flag), row.get("display_interval", interval)
 
 
 def _render_report(  # noqa: PLR0913
