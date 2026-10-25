@@ -352,8 +352,9 @@ def test_eval_filters_hard_tasks_and_summary_records_difficulty(
     hard = standard.model_copy(update={"difficulty": "hard"})
     captured: dict[str, Any] = {}
 
-    def capture(tasks: list[Any], _config: Any, **kwargs: Any) -> dict[str, Any]:
+    def capture(tasks: list[Any], config: Any, **kwargs: Any) -> dict[str, Any]:
         captured["tasks"] = tasks
+        captured["config"] = config
         captured["kwargs"] = kwargs
         return {"difficulty": kwargs["difficulty"]}
 
@@ -364,6 +365,23 @@ def test_eval_filters_hard_tasks_and_summary_records_difficulty(
 
     assert [task.difficulty for task in captured["tasks"]] == ["hard"]
     assert captured["kwargs"]["difficulty"] == "hard"
+    assert captured["config"].max_tokens == 16384
+
+    cli.main(["eval", "--out", str(tmp_path / "standard")])
+    assert captured["config"].max_tokens == 2048
+
+    cli.main(
+        [
+            "eval",
+            "--difficulty",
+            "hard",
+            "--max-tokens",
+            "4096",
+            "--out",
+            str(tmp_path / "hard-explicit"),
+        ]
+    )
+    assert captured["config"].max_tokens == 4096
 
     summary = evaluate(
         [hard],
@@ -377,6 +395,7 @@ def test_eval_filters_hard_tasks_and_summary_records_difficulty(
         client=ScriptedClient(oracle_actions(hard)),
     )
     assert summary["difficulty"] == "hard"
+    assert summary["max_tokens"] == 2048
 
 
 def test_leaderboard_filters_partial_runs_and_outputs_selected_split(tmp_path: Path) -> None:
