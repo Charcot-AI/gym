@@ -53,13 +53,13 @@ def evaluate(  # noqa: PLR0913
     submission = _submission_record(
         submitter,
         organization,
-        submitted or date.today().isoformat(),
+        submitted if submitted is not None else date.today().isoformat(),
         availability,
     )
     output = Path(out_dir)
     output.mkdir(parents=True, exist_ok=True)
     private = split == "private"
-    private_output_names = {"summary.json"}
+    private_output_names = {"summary.json", "submission.json"}
     if keep_episodes:
         private_output_names.add("episodes.jsonl")
     if private and any(path.name not in private_output_names for path in output.iterdir()):
@@ -141,12 +141,35 @@ def evaluate(  # noqa: PLR0913
         json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    if not private:
-        (output / "submission.json").write_text(
-            json.dumps(submission, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+    write_submission(
+        output,
+        submitter=submitter,
+        organization=organization,
+        submitted=submission["submitted"],
+        availability=availability,
+    )
     return summary
+
+
+def write_submission(
+    output: Path,
+    *,
+    submitter: str,
+    organization: str,
+    submitted: str | None,
+    availability: str,
+) -> dict[str, Any]:
+    submission = _submission_record(
+        submitter,
+        organization,
+        submitted if submitted is not None else date.today().isoformat(),
+        availability,
+    )
+    (output / "submission.json").write_text(
+        json.dumps(submission, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return submission
 
 
 def _submission_record(
