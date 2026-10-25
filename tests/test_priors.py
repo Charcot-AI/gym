@@ -55,7 +55,9 @@ def test_hard_public_generation_without_priors_matches_committed_artifacts(
 
     for task in generated:
         artifact = task_directory / f"{task['id']}.json"
-        assert json.loads(artifact.read_text(encoding="utf-8")) == task
+        artifact_task = json.loads(artifact.read_text(encoding="utf-8"))
+        artifact_task.pop("canary", None)
+        assert artifact_task == task
 
 
 def test_synthetic_priors_shift_document_panels_and_routine_values_deterministically() -> None:

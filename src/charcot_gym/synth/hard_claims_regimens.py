@@ -91,7 +91,11 @@ def _regimen(  # noqa: PLR0913
             "container_labels": docetaxel_container_labels,
         }
     ]
-    if regimen == "early_breast" and (index % 2 == 0 or include_cyclophosphamide):
+    if (
+        regimen == "early_breast"
+        and trastuzumab_product is None
+        and (index % 2 == 0 or include_cyclophosphamide)
+    ):
         cyclophosphamide_dose = int(
             Decimal(str(600 * bsa / 5)).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * 5
         )
@@ -142,7 +146,10 @@ def _regimen(  # noqa: PLR0913
                 "container_type": "single_dose" if presentation == 150 else "multi_dose",
                 "container_sizes_mg": [presentation],
                 "container_labels": {
-                    presentation: f"{presentation} mg {'single-dose' if presentation == 150 else 'multi-dose'} vial"
+                    presentation: (
+                        f"{presentation} mg "
+                        f"{'single-dose' if presentation == 150 else 'multi-dose'} vial"
+                    )
                 },
                 "ndc_by_size": {presentation: ndc},
                 "cycle": trastuzumab_cycle,
