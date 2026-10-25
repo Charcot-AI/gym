@@ -135,13 +135,17 @@ def _add_authorization(
 def _fee_rows(
     administrations: list[dict[str, Any]], plan: dict[str, Any], enabled: bool
 ) -> dict[str, list[dict[str, Any]]]:
-    if not enabled:
-        return {}
     rows: dict[str, list[dict[str, Any]]] = {}
     for code in dict.fromkeys(item["code"] for item in administrations):
-        base = Decimal(str(plan["fee_schedule"].get(code, "1.00")))
-        rows[code] = [
-            {"start": "2025-01-01", "end": "2025-12-31", "price": str(base)},
-            {"start": "2026-01-01", "end": None, "price": str(base + Decimal("0.10"))},
-        ]
+        base = Decimal(str(plan["fee_schedule"][code]))
+        if enabled:
+            rows[code] = [
+                {"start": "2025-01-01", "end": "2025-12-31", "price": str(base)},
+                {"start": "2026-01-01", "end": None, "price": str(base + Decimal("0.10"))},
+            ]
+        else:
+            rows[code] = [
+                {"start": "2025-01-01", "end": "2025-12-31", "price": str(base)},
+                {"start": "2026-01-01", "end": None, "price": str(base)},
+            ]
     return rows
