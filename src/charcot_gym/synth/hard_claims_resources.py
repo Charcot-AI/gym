@@ -18,6 +18,7 @@ from charcot_gym.terminology import (
     HCPCS_SYSTEM_URI,
     ICD10CM_SYSTEM_URI,
     LOINC_SYSTEM_URI,
+    NDC_SYSTEM_URI,
     OBSERVATION_CATEGORY_SYSTEM_URI,
     RELATED_CLAIM_PRIOR,
     RELATED_CLAIM_SYSTEM_URI,
@@ -68,6 +69,11 @@ def _claim(
             diagnosis_by_code[code],
             hcpcs,
             len(items) + 1,
+            ndc=administration.get("ndc_by_size", {}).get(
+                administration.get("vials_mg", [None])[0]
+            )
+            if plan.get("ndc_reporting_required")
+            else None,
         )
         single_dose = administration.get("container_type") == "single_dose"
         waste = int(administration.get("waste_mg", 0)) if cms_modifiers and single_dose else 0
@@ -84,6 +90,11 @@ def _claim(
                 hcpcs,
                 len(items) + 2,
                 "JW",
+                ndc=administration.get("ndc_by_size", {}).get(
+                    administration.get("vials_mg", [None])[0]
+                )
+                if plan.get("ndc_reporting_required")
+                else None,
             )
             items.extend([item, jw_item])
             total += Decimal(str(item["net"]["value"])) + Decimal(str(jw_item["net"]["value"]))
@@ -128,6 +139,8 @@ def _claim_item(
     hcpcs: dict[str, dict[str, Any]],
     sequence: int,
     modifier: str | None = None,
+    *,
+    ndc: str | None = None,
 ) -> dict[str, Any]:
     item = {
         "sequence": sequence,
@@ -140,7 +153,32 @@ def _claim_item(
     }
     if modifier:
         item["modifier"] = [{"coding": [{"system": HCPCS_SYSTEM_URI, "code": modifier}]}]
+    if ndc:
+        item["detail"] = [
+            {
+                "sequence": 1,
+                "productOrService": {
+                    "coding": [{"system": NDC_SYSTEM_URI, "code": _normalize_ndc(ndc)}]
+                },
+            }
+        ]
     return item
+
+
+def _normalize_ndc(value: str) -> str:
+    segments = value.split("-")
+    if len(segments) != 3:
+        raise ValueError(f"invalid NDC: {value}")
+    widths = [len(segment) for segment in segments]
+    if widths == [5, 3, 2]:
+        segments[1] = segments[1].zfill(4)
+    elif widths == [4, 4, 2]:
+        segments[0] = segments[0].zfill(5)
+    elif widths == [5, 4, 1]:
+        segments[2] = segments[2].zfill(2)
+    elif widths != [5, 4, 2]:
+        raise ValueError(f"invalid NDC: {value}")
+    return "".join(segments)
 
 
 def _price(

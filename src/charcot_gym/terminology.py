@@ -21,6 +21,7 @@ CLAIM_TYPE_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/claim-type"
 RELATED_CLAIM_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/ex-relatedclaimrelationship"
 OBSERVATION_CATEGORY_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/observation-category"
 V3_ACT_CODE_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/v3-ActCode"
+NDC_SYSTEM_URI = "http://hl7.org/fhir/sid/ndc"
 
 CLAIM_STATUS_ACTIVE = "active"
 CLAIM_TYPE_PROFESSIONAL = "professional"

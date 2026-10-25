@@ -156,6 +156,8 @@ def _shift_foreign_value(
 
 
 def _range_annotation(row: dict[str, Any]) -> tuple[str, str]:
+    if "value_code" in row:
+        return "—", "—"
     reference_range = row["reference_range"]
     display_range = row.get("display_reference_range", reference_range)
     display_precision = row.get("display_precision", row["precision"])
@@ -207,6 +209,7 @@ def _render_report(  # noqa: PLR0913
     comments_by_layout: dict[str, str],
     corrected: bool = False,
     cancelled: bool = False,
+    cumulative_summary: bool = False,
 ) -> str:
     seed_accession = accession.replace("ACC-", "H2-", 1)
     letterhead = _LAB_LETTERHEADS[
@@ -231,6 +234,8 @@ def _render_report(  # noqa: PLR0913
     ]
     if corrected:
         lines.append("*** CORRECTED REPORT — REPLACES THE PRIOR REPORT FOR THIS ACCESSION ***")
+    if cumulative_summary:
+        lines.append("CUMULATIVE SUMMARY")
     lines.extend(
         [
             "",
@@ -248,11 +253,22 @@ def _render_report(  # noqa: PLR0913
         ]
     )
     layout_index = REPORT_LAYOUTS.index(layout)
+    previous_section = None
     for row in rows:
+        section = row.get("specimen_section")
+        if section and section != previous_section:
+            lines.append(section)
+            previous_section = section
         short_name = short_names[row["code"]][layout_index % len(short_names[row["code"]])]
-        result = row.get("display_value", _format_value(row["value"], row["precision"]))
+        result = row.get(
+            "display_value",
+            _format_value(row["value"], row["precision"]) if "value" in row else "",
+        )
         flag, interval = _range_annotation(row)
-        unit = row.get("display_unit", _HUMAN_UNITS.get(row["unit"], row["unit"]))
+        unit = row.get(
+            "display_unit",
+            _HUMAN_UNITS.get(row["unit"], row["unit"]) if row.get("unit") else "—",
+        )
         lines.append(f"{short_name:<36} {result:>9} {flag:>4}  {unit:<20} {interval:>20}")
         if row["effective"] != collection_date.isoformat():
             lines.append(f"Add-on specimen collected: {row['effective']} — {short_name}")

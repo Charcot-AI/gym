@@ -9,7 +9,9 @@ from typing import Any
 
 from charcot_gym.task import Task
 from charcot_gym.terminology import (
+    HCPCS_SYSTEM_URI,
     ICD10CM_SYSTEM_URI,
+    NDC_SYSTEM_URI,
     hcpcs_is_active_on,
 )
 from charcot_gym.verifier.contracts import (
@@ -330,6 +332,44 @@ class ClaimsVerifier:
                         )
                     )
             for name in sorted(critical_names):
+                if name == "biosimilar_code":
+                    expected_codes = [
+                        _product_code(item, hcpcs_system_aliases)
+                        for item in expected_items
+                        if _product_code(item, hcpcs_system_aliases)
+                        in {"J9355", "Q5112", "Q5113", "Q5114", "Q5116", "Q5117"}
+                    ]
+                    actual_codes = [
+                        _product_code(item, hcpcs_system_aliases)
+                        for item in actual_items
+                        if isinstance(item, Mapping)
+                        and _product_code(item, hcpcs_system_aliases)
+                        in {"J9355", "Q5112", "Q5113", "Q5114", "Q5116", "Q5117"}
+                    ]
+                    check_passed = (
+                        gold.get("trastuzumab_code") is not None
+                        and actual_codes == expected_codes
+                    )
+                    checks.append(
+                        _claim_check(
+                            name,
+                            check_passed,
+                            "Trastuzumab product code matches the MAR."
+                            if check_passed
+                            else "Trastuzumab product code differs from the MAR.",
+                        )
+                    )
+                elif name == "ndc_reported":
+                    check_passed = _ndc_reporting_matches(claim, expected)
+                    checks.append(
+                        _claim_check(
+                            name,
+                            check_passed,
+                            "Every drug line reports its normalized NDC."
+                            if check_passed
+                            else "A drug line has a missing or incorrect NDC.",
+                        )
+                    )
                 if name.startswith("diagnosis_link_"):
                     code = name.removeprefix("diagnosis_link_")
                     check_passed = _diagnosis_links_match_code(
@@ -435,6 +475,45 @@ def _modifier_lines_match(
         if isinstance(item, Mapping) and _item_has_modifier(item, modifier)
     )
     return actual == expected
+
+
+def _ndc_reporting_matches(
+    actual_claim: Mapping[str, Any], expected_claim: Mapping[str, Any]
+) -> bool:
+    expected_items = expected_claim.get("item", [])
+    actual_items = actual_claim.get("item", [])
+    if not isinstance(expected_items, list) or not isinstance(actual_items, list):
+        return False
+
+    def signatures(items: list[Any]) -> list[tuple[Any, ...]]:
+        return sorted(
+            (
+                _product_code(item, {HCPCS_SYSTEM_URI}),
+                item.get("quantity", {}).get("value"),
+                item.get("servicedDate"),
+                _ndc_code(item),
+            )
+            for item in items
+            if isinstance(item, Mapping)
+        )
+
+    actual = signatures(actual_items)
+    expected = signatures(expected_items)
+    return actual == expected and all(signature[3] for signature in actual)
+
+
+def _ndc_code(item: Mapping[str, Any]) -> str | None:
+    details = item.get("detail", [])
+    if not isinstance(details, list) or not details:
+        return None
+    product = details[0].get("productOrService", {})
+    codings = product.get("coding", []) if isinstance(product, Mapping) else []
+    values = [
+        coding.get("code")
+        for coding in codings
+        if isinstance(coding, Mapping) and coding.get("system") == NDC_SYSTEM_URI
+    ]
+    return values[0] if len(values) == 1 and isinstance(values[0], str) else None
 
 
 def _diagnosis_links_match_code(

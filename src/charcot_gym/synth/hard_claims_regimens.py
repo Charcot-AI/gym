@@ -7,6 +7,52 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 
+TRASTUZUMAB_PRODUCTS = {
+    "J9355": {
+        "brand": "Herceptin",
+        "generic": "trastuzumab",
+        "ndc_150": "50242-132-01",
+        "ndc_420": None,
+        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=492dbdb2-077e-4064-bff3-372d6af0a7a2",
+    },
+    "Q5112": {
+        "brand": "Ontruzant",
+        "generic": "trastuzumab-dttb",
+        "ndc_150": "78206-147-01",
+        "ndc_420": "78206-148-01",
+        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=ce2a2492-85e3-4b0a-872a-047f44e4203d",
+    },
+    "Q5113": {
+        "brand": "Herzuma",
+        "generic": "trastuzumab-pkrb",
+        "ndc_150": "63459-303-43",
+        "ndc_420": "63459-305-47",
+        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=ae71c003-883a-4cd8-ad50-e8cc9a54e971",
+    },
+    "Q5114": {
+        "brand": "Ogivri",
+        "generic": "trastuzumab-dkst",
+        "ndc_150": "83257-001-11",
+        "ndc_420": "83257-003-01",
+        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=b6465b44-a6dd-f99c-d009-6851cf05169c",
+    },
+    "Q5116": {
+        "brand": "Trazimera",
+        "generic": "trastuzumab-qyyp",
+        "ndc_150": "0069-0308-01",
+        "ndc_420": "0069-0305-01",
+        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=b9c5e894-27d2-4245-a653-df986fed3c56",
+    },
+    "Q5117": {
+        "brand": "Kanjinti",
+        "generic": "trastuzumab-anns",
+        "ndc_150": "55513-141-01",
+        "ndc_420": "55513-132-01",
+        "source_url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=9a94f5b2-b84e-4987-8ea1-c4346db5a5fa",
+    },
+}
+
+
 def _regimen(  # noqa: PLR0913
     regimen: str,
     index: int,
@@ -15,6 +61,10 @@ def _regimen(  # noqa: PLR0913
     *,
     rng: random.Random,
     include_cyclophosphamide: bool = False,
+    trastuzumab_product: dict[str, Any] | None = None,
+    trastuzumab_dose_mg: int | None = None,
+    trastuzumab_cycle: int | None = None,
+    trastuzumab_presentation: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, int]]:
     breast = "C50.911" if index % 2 else "C50.912"
     cancer_code = "C61" if regimen == "metastatic_prostate" else breast
@@ -78,6 +128,27 @@ def _regimen(  # noqa: PLR0913
                 "container_labels": {120: "120 mg/1.7 mL single-dose vial"},
             }
         )
+    if trastuzumab_product is not None and trastuzumab_dose_mg is not None:
+        code = trastuzumab_product["code"]
+        presentation = trastuzumab_presentation or 150
+        ndc = trastuzumab_product["ndc_150" if presentation == 150 else "ndc_420"]
+        administrations.append(
+            {
+                "code": code,
+                "name": f"{trastuzumab_product['brand']} ({trastuzumab_product['generic']})",
+                "dose": trastuzumab_dose_mg,
+                "dose_unit": "mg",
+                "diagnosis_sequence": 2,
+                "container_type": "single_dose" if presentation == 150 else "multi_dose",
+                "container_sizes_mg": [presentation],
+                "container_labels": {
+                    presentation: f"{presentation} mg {'single-dose' if presentation == 150 else 'multi-dose'} vial"
+                },
+                "ndc_by_size": {presentation: ndc},
+                "cycle": trastuzumab_cycle,
+            }
+        )
+        diagnosis_by_code[code] = 2
     administrations.append(
         {
             "code": "J2405",
@@ -88,6 +159,7 @@ def _regimen(  # noqa: PLR0913
             "container_type": "multi_dose",
             "container_sizes_mg": [40],
             "container_labels": {40: "40 mg/20 mL multi-dose vial"},
+            "ndc_by_size": {40: "16729-298-05"},
         }
     )
     return administrations, diagnoses, diagnosis_by_code

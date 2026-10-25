@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from charcot_gym import ClinicalEnv, Submit, Task, ToolCall, load_tasks
+from charcot_gym.synth.hard_claims_regimens import TRASTUZUMAB_PRODUCTS
 from charcot_gym.terminology import RELATED_CLAIM_SYSTEM_URI, hcpcs_is_active_on
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -188,10 +189,15 @@ def test_hard_claim_pack_and_regimen_balance() -> None:
         "two_drugs",
         "effective_fee_schedule",
         "chained_denial",
+        "biosimilar_code",
+        "ndc_reporting",
     }
     for pack in pack_counts:
         public_count = sum(pack in task.metadata["packs"] for task in public)
-        assert pack_counts[pack] >= 6
+        if pack in {"biosimilar_code", "ndc_reporting"}:
+            assert pack_counts[pack] > 0
+        else:
+            assert pack_counts[pack] >= 6
         assert public_count == pack_counts[pack]
     regimens = Counter(task.metadata["regimen"] for task in tasks)
     assert set(regimens) == {
@@ -201,7 +207,7 @@ def test_hard_claim_pack_and_regimen_balance() -> None:
     }
     assert all(count >= 6 for count in regimens.values())
     assert all(task.max_steps == 96 for task in tasks)
-    assert all(2 <= len(task.metadata["packs"]) <= 3 for task in tasks)
+    assert all(2 <= len(task.metadata["packs"]) <= 5 for task in tasks)
     assert all(task.metadata["profile"] == "oncology_course" for task in tasks)
 
 
@@ -213,6 +219,8 @@ def test_hard_claim_prompts_sop_plan_rules_and_remittance_do_not_leak() -> None:
         "two_drugs",
         "effective_fee_schedule",
         "chained_denial",
+        "biosimilar_code",
+        "ndc_reporting",
     }
     sop_texts = set()
     for task in hard_claims():
@@ -582,6 +590,11 @@ def test_docetaxel_container_type_is_drawn_per_task() -> None:
 
 
 def test_hard_claim_hcpcs_codes_and_modifiers_are_active() -> None:
+    for code, product in TRASTUZUMAB_PRODUCTS.items():
+        assert HCPCS[code]["unit_size"] == "10"
+        assert product["brand"] in HCPCS[code]["synonyms"]
+        assert product["generic"] in HCPCS[code]["synonyms"]
+    assert "Q5115" not in HCPCS
     for task in hard_claims():
         claim = task.gold["expected_claim"]
         for item in claim["item"]:
@@ -594,6 +607,13 @@ def test_hard_claim_hcpcs_codes_and_modifiers_are_active() -> None:
         assert task.metadata["cms_icd10cm_source_url"].endswith(
             "2026-code-descriptions-tabular-order.zip"
         )
+        if "biosimilar_code" in task.metadata["packs"]:
+            code = task.gold["trastuzumab_code"]
+            assert code in {"J9355", "Q5112", "Q5113", "Q5114", "Q5116", "Q5117"}
+            assert HCPCS[code]["unit_size"] == "10"
+            assert HCPCS[code]["cms_source_url"] == task.metadata["cms_hcpcs_source_url"]
+            assert task.metadata["dailymed_trastuzumab_source_urls"]
+        assert "Q5115" not in {item_code(item) for item in claim["item"]}
         assert "xgeva" in task.metadata["dailymed_vial_source_urls"]
         if any(item_code(item) == "J9075" for item in task.gold["expected_claim"]["item"]):
             assert "cyclophosphamide" in task.metadata["dailymed_vial_source_urls"]
@@ -634,6 +654,79 @@ def test_hard_modifier_checks_and_denials_match_gold() -> None:
         hidden_error = task.gold.get("denial_errors", {}).get("hidden")
         if hidden_error == "missing_jw_line":
             assert has_jw, task.id
+
+
+def test_biosimilar_product_code_and_ndc_reporting_are_plan_consistent() -> None:
+    optional_ndc_checked = False
+    for task in hard_claims():
+        expected = task.gold["expected_claim"]
+        rules = document(task, "Healthplan rules")[1]
+        ndc_required = task.metadata["healthplan_id"] == "healthplan-northstar-ndc"
+        assert task.gold["ndc_required"] is ndc_required
+        assert ("ndc_reported" in task.gold["critical_checks"]) is ndc_required
+        assert ("Report the vial's National Drug Code" in rules) is ndc_required
+        if "biosimilar_code" in task.metadata["packs"]:
+            code = task.gold["trastuzumab_code"]
+            drug = next(item for item in expected["item"] if item_code(item) == code)
+            assert code in {"J9355", "Q5112", "Q5113", "Q5114", "Q5116", "Q5117"}
+            assert "biosimilar_code" in task.gold["critical_checks"]
+            _, mar = document(task, "Pharmacy/MAR record")
+            assert "cycle" in mar.lower()
+            product = TRASTUZUMAB_PRODUCTS[code]
+            assert product["brand"] in mar
+            assert product["generic"] in mar
+            assert drug["quantity"]["value"] > 0
+            cycle = task.metadata["trastuzumab_cycle"]
+            dose = task.metadata["trastuzumab_dose_mg"]
+            presentation = task.metadata["trastuzumab_presentation_mg"]
+            assert cycle in {1, 4} and dose > 0
+            assert presentation == 150 or (code != "J9355" and cycle > 1 and presentation == 420)
+            weight = next(
+                item["valueQuantity"]["value"]
+                for item in resources(task, "Observation")
+                if item["code"]["coding"][0]["code"] == "29463-7"
+            )
+            assert abs(dose - weight * (8 if cycle == 1 else 6)) < 0.5
+            assert drug["quantity"]["value"] == math.ceil(dose / 10)
+            assert (
+                "150 mg single-dose vial" if presentation == 150 else "420 mg multi-dose vial"
+            ) in mar
+            assert task.metadata["dailymed_trastuzumab_source_urls"] == [product["source_url"]]
+        if ndc_required:
+            _, mar = document(task, "Pharmacy/MAR record")
+            reported = set(re.findall(r"NDC ([0-9-]+)", mar))
+            claim_ndcs = {
+                detail["productOrService"]["coding"][0]["code"]
+                for item in expected["item"]
+                for detail in item.get("detail", [])
+            }
+            assert claim_ndcs
+            assert all(len(code) == 11 and code.isdigit() for code in claim_ndcs)
+            assert all(any(ndc.replace("-", "") in code for ndc in reported) for code in claim_ndcs)
+            altered = deepcopy(expected)
+            for item in altered["item"]:
+                item.pop("detail", None)
+            assert score_claim(task, altered).value == 0.0
+        else:
+            if not optional_ndc_checked:
+                altered = deepcopy(expected)
+                for item in altered["item"]:
+                    item["detail"] = [
+                        {
+                            "sequence": 1,
+                            "productOrService": {
+                                "coding": [
+                                    {
+                                        "system": "http://hl7.org/fhir/sid/ndc",
+                                        "code": "00000000000",
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                assert score_claim(task, altered).value == 1.0
+                optional_ndc_checked = True
+    assert optional_ndc_checked
 
 
 def test_non_link_claim_checks_ignore_diagnosis_links() -> None:

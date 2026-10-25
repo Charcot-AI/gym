@@ -20,6 +20,31 @@ PHRASING_POOLS: dict[str, list[str]] = {
         "T2DM above goal with hyperglycemia",
         "Type 2 diabetes with current hyperglycemia",
     ],
+    "E11.42": [
+        "T2DM with peripheral neuropathy",
+        "diabetic polyneuropathy",
+        "type 2 diabetes with distal symmetric neuropathy",
+    ],
+    "I13.0": [
+        "hypertensive heart and kidney disease with heart failure",
+        "hypertension with heart failure and CKD",
+        "hypertensive heart and chronic kidney disease with HF",
+    ],
+    "I50.32": [
+        "chronic diastolic heart failure",
+        "chronic HFpEF",
+        "chronic heart failure with preserved ejection fraction",
+    ],
+    "I69.351": [
+        "residual right-sided hemiplegia after cerebral infarction",
+        "right hemiparesis persists after prior stroke",
+        "right dominant-side weakness remains following stroke",
+    ],
+    "Z86.73": [
+        "remote cerebral infarction without residual deficit",
+        "history of stroke without lasting deficit",
+        "prior ischemic stroke; no residual symptoms",
+    ],
     "I12.9": [
         "HTN with CKD",
         "hypertensive CKD",
@@ -184,9 +209,16 @@ def _render_note(  # noqa: PLR0913, PLR0917
                 line += "; " + _phrase("E11.65", rng)
             if dm_phrase and details.get("symptom"):
                 line += f"; {details['symptom']} attributed to diabetes"
+            if dm_phrase and "dm_multiple_manifestations" in packs:
+                line += "; " + _phrase("E11.42", rng)
             if dm_phrase:
                 line += f" — {_medication_plan(labs.get('medication_class'))}."
                 lines.append(line)
+        elif "htn_heart_ckd" in packs:
+            lines.append(
+                f"{_phrase('I13.0', rng)}; {_phrase('I50.32', rng)}; "
+                f"{ckd_phrase} — continue lisinopril 20 mg daily."
+            )
         elif "htn_ckd_presumption" in packs:
             lines.append(
                 f"Hypertension at goal; BP {bp[0]}/{bp[1]} — continue lisinopril 20 mg daily."
@@ -206,7 +238,7 @@ def _render_note(  # noqa: PLR0913, PLR0917
         "htn_ckd" in packs
         or "dm_htn_ckd" in packs
         or "already_on_active_problem_list" in scenario.get("traps", [])
-    ) and "htn_ckd_presumption" not in packs:
+    ) and "htn_ckd_presumption" not in packs and "htn_heart_ckd" not in packs:
         if has_ckd and ("htn_ckd" in packs or "dm_htn_ckd" in packs):
             lines.append(f"{_phrase('I12.9', rng)}; BP {bp[0]}/{bp[1]} — lisinopril 20 mg daily.")
         else:
@@ -235,6 +267,9 @@ def _render_note(  # noqa: PLR0913, PLR0917
         )
     if "medication_only" in packs:
         lines.append("Medication list: levothyroxine 75 mcg every morning.")
+    if "stroke_sequela" in packs:
+        code = "I69.351" if details["stroke_sequela_residual"] else "Z86.73"
+        lines.append("Right-handed; " + _phrase(code, rng) + ".")
     addendum = None
     if "uncertain_dx" in packs:
         lines.append("Cough with probable PNA; CXR ordered and pending. Supportive care reviewed.")
@@ -310,6 +345,8 @@ def _objective(
 def _medication_plan(medication_class: str | None) -> str:
     if medication_class == "insulin":
         return "glargine 20 u qHS"
+    if medication_class == "both":
+        return "glargine 20 units nightly and metformin 500 mg twice daily"
     return "metformin 500 mg BID"
 
 
