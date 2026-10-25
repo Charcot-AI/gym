@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run pytest
+      - run: uv run python scripts/check_terms.py
+      - run: uv run python scripts/build_tasks.py --check
+      - run: uv build
+      - name: Check package contents
+        run: |
+          python - <<'PY'
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          for wheel in Path("dist").glob("*.whl"):
+              names = zipfile.ZipFile(wheel).namelist()
+              assert not any(set(name.split("/")) & {"private", "internal"} for name in names)
+          for archive in Path("dist").glob("*.tar.gz"):
+              with tarfile.open(archive) as sdist:
+                  names = sdist.getnames()
+              assert not any(set(name.split("/")) & {"private", "internal"} for name in names)
+          PY

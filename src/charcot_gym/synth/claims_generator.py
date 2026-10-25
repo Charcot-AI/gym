@@ -55,6 +55,8 @@ BUILD_COUNTS = {
 
 def generate_claim_task_sets(
     private_seed: int,
+    *,
+    public_seed: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Create the claims set by augmenting the shared scenario resources."""
     public_source, private_source = generate_task_sets(private_seed, family="document_fhir")
@@ -65,6 +67,7 @@ def generate_claim_task_sets(
     hcpcs = {row["code"]: row for row in _read_json(PACKAGE / "data" / "hcpcs_subset.json")}
     outputs = []
     for split, source_tasks in (("public", public_source), ("private", private_source)):
+        split_seed = public_seed if split == "public" and public_seed is not None else private_seed
         grouped: dict[str, list[dict[str, Any]]] = {}
         for source in source_tasks:
             grouped.setdefault(source["metadata"]["scenario_id"], []).append(source)
@@ -75,7 +78,7 @@ def generate_claim_task_sets(
                 candidates = [
                     item for item in candidates if item["metadata"].get("variant") == "clear"
                 ]
-            rng = random.Random(private_seed + sum(map(ord, scenario_id)) + (split == "private"))
+            rng = random.Random(split_seed + sum(map(ord, scenario_id)) + (split == "private"))
             rng.shuffle(candidates)
             expanded = [
                 deepcopy(candidates[index % len(candidates)]) for index in range(target_count)
@@ -84,7 +87,7 @@ def generate_claim_task_sets(
             labels.extend(["claim_fix"] * (target_count - len(labels)))
             rng.shuffle(labels)
             rows.extend(zip(expanded, labels, strict=True))
-        random.Random(private_seed + (split == "private")).shuffle(rows)
+        random.Random(split_seed + (split == "private")).shuffle(rows)
         routine_positions = [
             position
             for position, (source, _) in enumerate(rows)
@@ -94,7 +97,7 @@ def generate_claim_task_sets(
         if prior_awv_count > len(routine_positions):
             raise ValueError(f"Prior AWV count exceeds routine tasks for {split}.")
         prior_awv_positions = set(
-            random.Random(private_seed + 701 + (split == "private")).sample(
+            random.Random(split_seed + 701 + (split == "private")).sample(
                 routine_positions, prior_awv_count
             )
         )
@@ -102,7 +105,7 @@ def generate_claim_task_sets(
         fix_counts: dict[str, int] = {}
         for position, (source, task_type) in enumerate(rows):
             index = position + 1
-            source["seed"] = private_seed + index + (1000 if split == "private" else 0)
+            source["seed"] = split_seed + index + (1000 if split == "private" else 0)
             scenario_id = source["metadata"]["scenario_id"]
             if task_type == "claim_fix":
                 fix_counts[scenario_id] = fix_counts.get(scenario_id, 0) + 1

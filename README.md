@@ -9,3 +9,5 @@ uv sync --group dev
 uv run charcot-gym list
 uv run pytest
 ```
+
+The held-out split is maintained separately and evaluated by Charcot.
