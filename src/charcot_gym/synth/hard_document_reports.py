@@ -76,6 +76,8 @@ def _corrected_rows(
             candidate = _rounded_value(current - step, precision)
         if parameters["physiologic_min"] <= candidate <= parameters["physiologic_max"]:
             row["value"] = candidate
+            if row.get("display_unit") == "/µL":
+                row["display_value"] = f"{round(float(candidate) * 1000):,}"
             changed.append(code)
     if not changed:
         raise ValueError("no physiologically valid correction candidate was available")
@@ -239,9 +241,9 @@ def _render_report(  # noqa: PLR0913
     layout_index = REPORT_LAYOUTS.index(layout)
     for row in rows:
         short_name = short_names[row["code"]][layout_index % len(short_names[row["code"]])]
-        result = _format_value(row["value"], row["precision"])
+        result = row.get("display_value", _format_value(row["value"], row["precision"]))
         flag, interval = _range_annotation(row)
-        unit = _HUMAN_UNITS.get(row["unit"], row["unit"])
+        unit = row.get("display_unit", _HUMAN_UNITS.get(row["unit"], row["unit"]))
         lines.append(f"{short_name:<36} {result:>9} {flag:>4}  {unit:<20} {interval:>20}")
         if row["effective"] != collection_date.isoformat():
             lines.append(f"Add-on specimen collected: {row['effective']} — {short_name}")

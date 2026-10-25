@@ -69,11 +69,15 @@ def _claim(
             hcpcs,
             len(items) + 1,
         )
-        waste = int(administration.get("waste_mg", 0)) if cms_modifiers else 0
-        if cms_modifiers and code == "J9171" and waste:
+        single_dose = administration.get("container_type") == "single_dose"
+        waste = int(administration.get("waste_mg", 0)) if cms_modifiers and single_dose else 0
+        if cms_modifiers and single_dose and waste:
+            waste_quantity = int(
+                (Decimal(str(waste)) / unit_size).to_integral_value(rounding=ROUND_CEILING)
+            )
             jw_item = _claim_item(
                 code,
-                waste,
+                waste_quantity,
                 item_date,
                 price,
                 diagnosis_by_code[code],
@@ -84,7 +88,7 @@ def _claim(
             items.extend([item, jw_item])
             total += Decimal(str(item["net"]["value"])) + Decimal(str(jw_item["net"]["value"]))
         else:
-            if cms_modifiers and code in {"J9171", "J0897"}:
+            if cms_modifiers and single_dose:
                 item["modifier"] = [{"coding": [{"system": HCPCS_SYSTEM_URI, "code": "JZ"}]}]
             items.append(item)
             total += Decimal(str(item["net"]["value"]))

@@ -7,7 +7,7 @@ import random
 from datetime import date, timedelta
 from typing import Any
 
-CKD_PACKS = {"dm_ckd", "htn_ckd", "dm_htn_ckd"}
+CKD_PACKS = {"dm_ckd", "htn_ckd", "htn_ckd_presumption", "dm_htn_ckd"}
 LAYOUTS = ("problem_soap", "dictated", "ehr_template")
 PHRASING_POOLS: dict[str, list[str]] = {
     "E11.22": [
@@ -167,13 +167,31 @@ def _render_note(  # noqa: PLR0913, PLR0917
         if has_diabetes:
             dm_phrase = _phrase("E11.22", rng)
             a1c = _value(labs, "4548-4")
+            if "htn_ckd_presumption" in packs:
+                symptom = details.get("symptom")
+                symptom_text = f"; {symptom} attributed to diabetes" if symptom else ""
+                lines.append(
+                    f"{dm_phrase}; HbA1c {a1c}%{symptom_text} — "
+                    f"{_medication_plan(labs.get('medication_class'))}."
+                )
+                lines.append(
+                    f"Hypertension at goal; BP {bp[0]}/{bp[1]} — continue lisinopril 20 mg daily."
+                )
+                lines.append(f"{ckd_phrase}; renal function stable.")
+                dm_phrase = ""
             line = f"{dm_phrase}; {ckd_phrase}; HbA1c {a1c}%"
-            if "E11.65" in scenario.get("expected_codes", []):
+            if dm_phrase and "E11.65" in scenario.get("expected_codes", []):
                 line += "; " + _phrase("E11.65", rng)
-            if details.get("symptom"):
+            if dm_phrase and details.get("symptom"):
                 line += f"; {details['symptom']} attributed to diabetes"
-            line += f" — {_medication_plan(labs.get('medication_class'))}."
-            lines.append(line)
+            if dm_phrase:
+                line += f" — {_medication_plan(labs.get('medication_class'))}."
+                lines.append(line)
+        elif "htn_ckd_presumption" in packs:
+            lines.append(
+                f"Hypertension at goal; BP {bp[0]}/{bp[1]} — continue lisinopril 20 mg daily."
+            )
+            lines.append(f"{ckd_phrase}; renal function stable.")
         else:
             lines.append(f"{_phrase('I12.9', rng)}; {ckd_phrase} — lisinopril 20 mg daily.")
     elif has_diabetes:
@@ -188,7 +206,7 @@ def _render_note(  # noqa: PLR0913, PLR0917
         "htn_ckd" in packs
         or "dm_htn_ckd" in packs
         or "already_on_active_problem_list" in scenario.get("traps", [])
-    ):
+    ) and "htn_ckd_presumption" not in packs:
         if has_ckd and ("htn_ckd" in packs or "dm_htn_ckd" in packs):
             lines.append(f"{_phrase('I12.9', rng)}; BP {bp[0]}/{bp[1]} — lisinopril 20 mg daily.")
         else:
@@ -215,6 +233,8 @@ def _render_note(  # noqa: PLR0913, PLR0917
             f"{_phrase(obesity_code, rng)}; {_phrase(bmi_code, rng, bmi=f'{bmi:.1f}')}. "
             "Nutrition and activity goals reviewed."
         )
+    if "medication_only" in packs:
+        lines.append("Medication list: levothyroxine 75 mcg every morning.")
     addendum = None
     if "uncertain_dx" in packs:
         lines.append("Cough with probable PNA; CXR ordered and pending. Supportive care reviewed.")

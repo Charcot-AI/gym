@@ -375,7 +375,7 @@ def test_claim_splits_types_privacy_and_hcpcs_terminology() -> None:
     related = correction.gold["expected_claim"]["related"][0]
     assert related["claim"]["reference"].startswith("Claim/draft-claim-")
     assert related["relationship"]["coding"][0] == {
-        "system": "http://terminology.hl7.org/CodeSystem/related-claim-relationship",
+        "system": "http://terminology.hl7.org/CodeSystem/ex-relatedclaimrelationship",
         "code": "prior",
     }
 
