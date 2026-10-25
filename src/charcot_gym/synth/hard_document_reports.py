@@ -6,6 +6,8 @@ import hashlib
 from datetime import date
 from typing import Any
 
+HEMOGLOBIN_ALTERNATIVE_UNIT = "g/L"
+
 REPORT_LAYOUTS = ("reference_table", "portal_summary", "fax_printout")
 
 
@@ -44,7 +46,7 @@ def _convert_hemoglobin_to_g_per_l(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         if row["code"] == "718-7":
             row["value"] = round(float(row["value"]) * 10)
-            row["unit"] = "g/L"
+            row["unit"] = HEMOGLOBIN_ALTERNATIVE_UNIT
             row["precision"] = 0
             row["reference_range"] = {
                 key: value * 10 for key, value in row["reference_range"].items()

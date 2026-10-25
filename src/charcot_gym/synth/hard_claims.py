@@ -52,6 +52,7 @@ ROOT = Path(__file__).parent
 PACKAGE = ROOT.parent
 CMS_HCPCS_SOURCE_URL = "https://www.cms.gov/files/zip/october-2026-alpha-numeric-hcpcs-file.zip"
 CMS_ICD10CM_SOURCE_URL = "https://www.cms.gov/files/zip/2026-code-descriptions-tabular-order.zip"
+HEIGHT_UNIT = "cm"
 DAILYMED_DOCETAXEL_URL = (
     "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=67508df6-b96f-46fa-a792-0afcdfa9810e"
 )
@@ -265,7 +266,7 @@ def _task(
                 service_date - timedelta(days=21),
                 "8302-2",
                 height_cm,
-                "cm",
+                HEIGHT_UNIT,
             )
         },
         {
