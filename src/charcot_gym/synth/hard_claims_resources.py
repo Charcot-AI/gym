@@ -76,9 +76,12 @@ def _claim(
         single_dose = administration.get("container_type") == "single_dose"
         waste = int(administration.get("waste_mg", 0)) if cms_modifiers and single_dose else 0
         if cms_modifiers and single_dose and waste:
-            waste_quantity = int(
-                (Decimal(str(waste)) / unit_size).to_integral_value(rounding=ROUND_CEILING)
+            container_quantity = int(
+                (
+                    sum(Decimal(str(size)) for size in administration["vials_mg"]) / unit_size
+                ).to_integral_value(rounding=ROUND_CEILING)
             )
+            waste_quantity = container_quantity - quantity
             jw_item = _claim_item(
                 code,
                 waste_quantity,

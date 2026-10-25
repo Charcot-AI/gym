@@ -15,6 +15,7 @@ from typing import Any
 
 from charcot_gym import ClinicalEnv, Submit, Task, ToolCall, load_tasks
 from charcot_gym.synth.hard_claims import HEIGHT_UNIT
+from charcot_gym.synth.hard_claims_documents import _vials_for_sizes
 from charcot_gym.synth.hard_clinical_coding_notes import PHRASING_POOLS
 from charcot_gym.synth.hard_document_reports import HEMOGLOBIN_ALTERNATIVE_UNIT
 from charcot_gym.terminology import (
@@ -124,6 +125,9 @@ ICD_TERMS = {
     if term
 }
 HCPCS_TERMS = {item["display"].casefold() for item in _entries("hcpcs_subset.json")}
+HCPCS_UNIT_SIZES = {
+    item["code"]: float(item["unit_size"]) for item in _entries("hcpcs_subset.json")
+}
 
 
 def _icd_codes(task: Task) -> list[str]:
@@ -912,6 +916,83 @@ def _claim_modifier_integrity(task: Task) -> list[str]:
     return errors
 
 
+def _claim_jw_container_unit_integrity(task: Task) -> list[str]:
+    items = task.gold.get("expected_claim", {}).get("item", [])
+    date_of_service = str(task.gold.get("expected_claim", {}).get("created", ""))
+    administrations = [
+        resource
+        for resource in _resources(task, "MedicationAdministration")
+        if resource.get("effectiveDateTime") == date_of_service
+    ]
+    drug_terms = {
+        "J9171": ("docetaxel",),
+        "J2405": ("ondansetron",),
+        "J9075": ("cyclophosphamide",),
+        "J0897": ("denosumab", "xgeva"),
+    }
+    errors = []
+    for code in {item_code(item) for item in items}:
+        terms = drug_terms.get(code)
+        if code in TRASTUZUMAB_PRODUCTS:
+            product = TRASTUZUMAB_PRODUCTS[code]
+            terms = (product["brand"], product["generic"])
+        if not terms:
+            continue
+        administration = next(
+            (
+                resource
+                for resource in administrations
+                if any(
+                    term.casefold()
+                    in str(
+                        resource.get("medication", {}).get("concept", {}).get("text", "")
+                    ).casefold()
+                    for term in terms
+                )
+            ),
+            None,
+        )
+        if administration is None:
+            errors.append(f"Hard Claims drug {code} has no medication administration")
+            continue
+        vial_sizes = task.metadata.get("vial_sizes_mg", {}).get(code, [])
+        if code == "J9171":
+            single_dose = 20 in vial_sizes
+        elif code in {"J9075", "J0897"}:
+            single_dose = True
+        elif code in TRASTUZUMAB_PRODUCTS:
+            single_dose = 150 in vial_sizes
+        else:
+            single_dose = False
+        if not single_dose:
+            continue
+        if not vial_sizes:
+            errors.append(f"Hard Claims drug {code} has no vial sizes")
+            continue
+        dose = int(administration.get("dosage", {}).get("dose", {}).get("value", 0))
+        vials = _vials_for_sizes(dose, [int(size) for size in vial_sizes])
+        if not vials:
+            errors.append(f"Hard Claims drug {code} has no vial combination")
+            continue
+        unit_size = HCPCS_UNIT_SIZES.get(code)
+        if unit_size is None or unit_size <= 0:
+            errors.append(f"Hard Claims drug {code} has no HCPCS unit size")
+            continue
+        container_units = math.ceil(sum(vials) / unit_size)
+        administered_units = sum(
+            int(item.get("quantity", {}).get("value", 0))
+            for item in items
+            if item_code(item) == code and "JW" not in modifiers(item)
+        )
+        jw_lines = [item for item in items if item_code(item) == code and "JW" in modifiers(item)]
+        jw_units = sum(int(item.get("quantity", {}).get("value", 0)) for item in jw_lines)
+        if administered_units + jw_units > container_units:
+            errors.append(f"Hard Claims drug {code} bills more units than its containers")
+        if jw_lines and administered_units + jw_units != container_units:
+            errors.append(f"Hard Claims drug {code} JW units do not exhaust its containers")
+    return errors
+
+
 def _birth_date(task: Task) -> str:
     patient = next(
         (
@@ -1641,6 +1722,14 @@ INVARIANTS = (
         lambda task: task.family == "claims" and task.difficulty == "hard",
         _no_errors(_claim_modifier_integrity),
         "hard claims tasks with container-type items",
+    ),
+    Invariant(
+        "claim_jw_container_unit_integrity",
+        "Administered and JW units stay within single-dose containers and equal container units "
+        "when JW is billed.",
+        lambda task: task.family == "claims" and task.difficulty == "hard",
+        _no_errors(_claim_jw_container_unit_integrity),
+        "hard claims tasks",
     ),
     Invariant(
         "claim_product_integrity",
