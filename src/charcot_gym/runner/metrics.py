@@ -172,6 +172,7 @@ def _totals(episodes: list[dict[str, Any]]) -> dict[str, Any]:
             for item in episodes
         ),
         "errored_count": sum(item.get("status") == "errored" for item in episodes),
+        "not_supported_count": sum(item.get("status") == "not_supported" for item in episodes),
         "attempt_count": len(episodes),
     }
 

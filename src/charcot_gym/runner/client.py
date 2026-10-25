@@ -23,6 +23,7 @@ class ModelConfig:
     retries: int = 3
     retry_backoff_s: float = 0.5
     price_table: dict[str, dict[str, float]] = field(default_factory=dict)
+    supports_images: bool = True
 
     def __post_init__(self) -> None:
         if self.timeout <= 0:
