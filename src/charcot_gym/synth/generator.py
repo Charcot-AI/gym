@@ -125,6 +125,10 @@ def generate_task_sets(
     calibration = _read_json(Path(__file__).with_name("calibration.json"))
     scenarios = _read_json(Path(__file__).with_name("scenarios.json"))["scenarios"]
     analytes = _read_json(PACKAGE_ROOT / "data" / "loinc_subset.json")
+    for entry in analytes:
+        parameters = calibration["analyte_parameters"].get(entry["code"])
+        if parameters is not None:
+            entry["precision"] = parameters["precision"]
     coding = _read_json(Path(__file__).with_name("clinical_coding.json"))
     generation_data = _GenerationData(calibration, scenarios, analytes, coding)
     public_scenarios, private_scenarios = _stratified_scenario_choices(
@@ -324,7 +328,8 @@ def _generate_split(
                 sex=gender,
             )
         )
-        _apply_history_relationships(rng, scenario, histories, current, data.calibration)
+        _apply_history_relationships(rng, scenario, histories, current, gender, data.calibration)
+        _validate_generated_values(histories + current, scenario, gender, data.calibration)
         if task_family == "document_fhir":
             layout = rng.choice(calibration["layouts"][split])
             document_text = _render_report(
@@ -708,6 +713,7 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
                     scenario["history_rules"].get(entry["code"]),
                     calibration,
                     context.sex,
+                    _is_abnormal_allowed(entry, scenario, calibration),
                 )
                 cycle_result.append(
                     {
@@ -717,7 +723,7 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
                         "cycle": cycle,
                     }
                 )
-            _enforce_cbc_coupling(cycle_result, rng, calibration)
+            _enforce_cbc_coupling(cycle_result, rng, calibration, scenario, context.sex)
             result.extend(cycle_result)
         return result
     settings = calibration["history_results"]
@@ -737,7 +743,14 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
         paired_date = (collection_date - timedelta(days=days_before)).isoformat()
     for entry in entries:
         value_rule = scenario["history_rules"].get(entry["code"])
-        value = _draw_value(rng, entry, value_rule, calibration, context.sex)
+        value = _draw_value(
+            rng,
+            entry,
+            value_rule,
+            calibration,
+            context.sex,
+            _is_abnormal_allowed(entry, scenario, calibration),
+        )
         if entry["code"] in paired_codes and paired_date is not None:
             effective = paired_date
         else:
@@ -750,7 +763,7 @@ def _draw_histories(context: _HistoryContext) -> list[dict[str, Any]]:
                 "date": effective,
             }
         )
-    _enforce_cbc_coupling(result, rng, calibration)
+    _enforce_cbc_coupling(result, rng, calibration, scenario, context.sex)
     return result
 
 
@@ -802,7 +815,14 @@ def _draw_current(context: _CurrentContext) -> list[dict[str, Any]]:
         }:
             assert variant is not None
             assert rule is not None
-            value = _draw_value(rng, entry, rule[variant], calibration, sex)
+            value = _draw_value(
+                rng,
+                entry,
+                rule[variant],
+                calibration,
+                sex,
+                _is_abnormal_allowed(entry, scenario, calibration),
+            )
         elif scenario["id"] == "oncology_precycle" and entry["code"] == marker_code:
             assert marker_code is not None
             assert marker_trend is not None
@@ -811,13 +831,15 @@ def _draw_current(context: _CurrentContext) -> list[dict[str, Any]]:
                 key=lambda item: item["date"],
             )
             trend_rule = scenario["current_rules"]["tumor_marker"]
-            change = rng.uniform(trend_rule["delta_min"], trend_rule["delta_max"])
-            value = (
-                history["value"] + change
-                if marker_trend == "rising"
-                else max(0.0, history["value"] - change)
+            value = _draw_marker_trend(
+                rng,
+                history["value"],
+                marker_trend,
+                trend_rule,
+                entry,
+                calibration,
+                sex,
             )
-            value = _round_value(value, entry["precision"])
         elif rule and "min_ratio_to_history" in rule:
             history_by_code = {item["entry"]["code"]: item["value"] for item in histories}
             minimum = max(
@@ -825,43 +847,132 @@ def _draw_current(context: _CurrentContext) -> list[dict[str, Any]]:
                 history_by_code[entry["code"]] * rule["min_ratio_to_history"]
                 + 10 ** (-entry["precision"]),
             )
-            value = _draw_value(rng, entry, {**rule, "min": minimum}, calibration, sex)
+            value = _draw_value(
+                rng,
+                entry,
+                {**rule, "min": minimum},
+                calibration,
+                sex,
+                _is_abnormal_allowed(entry, scenario, calibration),
+            )
         else:
-            value = _draw_value(rng, entry, rule, calibration, sex)
+            value = _draw_value(
+                rng,
+                entry,
+                rule,
+                calibration,
+                sex,
+                _is_abnormal_allowed(entry, scenario, calibration),
+            )
         result.append({"entry": entry, "value": value})
-    _enforce_cbc_coupling(result, rng, calibration)
+    _enforce_cbc_coupling(result, rng, calibration, scenario, sex)
     return result
 
 
-def _draw_value(
+def _draw_value(  # noqa: PLR0913, PLR0917
     rng: random.Random,
     entry: dict[str, Any],
     rule: dict[str, Any] | None,
     calibration: dict[str, Any],
     sex: str,
+    allow_abnormal: bool,
 ) -> float | int:
     precision = entry["precision"]
+    parameters = calibration["analyte_parameters"][entry["code"]]
+    lower = parameters["physiologic_min"]
+    upper = parameters["physiologic_max"]
     if rule is not None:
         range_rule = rule.get("by_sex", {}).get(sex, rule)
-        value = rng.uniform(range_rule["min"], range_rule["max"])
-    else:
+        lower = max(lower, range_rule["min"])
+        upper = min(upper, range_rule["max"])
+    if not allow_abnormal:
         reference = _reference_range(entry, sex, calibration)
-        low = reference["min"]
-        high = reference["max"]
-        if rng.random() < calibration["abnormal_value_probability"]:
-            margin = (high - low) * rng.uniform(0.05, 0.25)
-            value = low - margin if low > 0 and rng.random() < 0.5 else high + margin
+        lower = max(lower, reference["min"])
+        upper = min(upper, reference["max"])
+    return _sample_value(rng, lower, upper, precision)
+
+
+def _sample_value(rng: random.Random, lower: float, upper: float, precision: int) -> float | int:
+    if lower > upper:
+        raise ValueError(f"No valid value in configured interval [{lower}, {upper}].")
+    for _ in range(10_000):
+        value = _round_value(rng.uniform(lower, upper), precision)
+        if value > 0 and lower <= value <= upper:
+            return value
+    raise ValueError(f"Could not sample a positive value in [{lower}, {upper}].")
+
+
+def _is_abnormal_allowed(
+    entry: dict[str, Any], scenario: dict[str, Any], calibration: dict[str, Any]
+) -> bool:
+    parameters = calibration["analyte_parameters"].get(entry["code"], {})
+    return parameters.get("name") in scenario.get("abnormal_analytes", [])
+
+
+def _draw_marker_trend(  # noqa: PLR0913, PLR0917
+    rng: random.Random,
+    prior_value: float | int,
+    trend: str,
+    rule: dict[str, Any],
+    entry: dict[str, Any],
+    calibration: dict[str, Any],
+    sex: str,
+) -> float | int:
+    reference = _reference_range(entry, sex, calibration)
+    parameters = calibration["analyte_parameters"][entry["code"]]
+    lower = max(reference["min"], parameters["physiologic_min"])
+    upper = min(reference["max"], parameters["physiologic_max"])
+    minimum_delta = rule["delta_min"]
+    maximum_delta = rule["delta_max"]
+    directions = [trend, "falling" if trend == "rising" else "rising"]
+    for direction in directions:
+        if direction == "rising":
+            maximum = min(maximum_delta, upper - prior_value)
         else:
-            value = rng.uniform(low, high)
-    rounded = round(value, precision)
-    return int(rounded) if precision == 0 else rounded
+            maximum = min(maximum_delta, prior_value - lower)
+        if maximum < minimum_delta:
+            continue
+        for _ in range(10_000):
+            delta = rng.uniform(minimum_delta, maximum)
+            value = _round_value(
+                prior_value + delta if direction == "rising" else prior_value - delta,
+                entry["precision"],
+            )
+            if lower <= value <= upper:
+                return value
+    raise ValueError(f"No valid tumor-marker trend for {entry['code']} at {prior_value}.")
 
 
-def _apply_history_relationships(
+def _validate_generated_values(
+    values: list[dict[str, Any]],
+    scenario: dict[str, Any],
+    sex: str,
+    calibration: dict[str, Any],
+) -> None:
+    for item in values:
+        entry = item["entry"]
+        value = item["value"]
+        parameters = calibration["analyte_parameters"][entry["code"]]
+        precision = parameters["precision"]
+        if (
+            value <= 0
+            or value < parameters["physiologic_min"]
+            or value > parameters["physiologic_max"]
+            or value != _round_value(value, precision)
+        ):
+            raise ValueError(f"Invalid generated value for {entry['code']}: {value}.")
+        if not _is_abnormal_allowed(entry, scenario, calibration):
+            reference = _reference_range(entry, sex, calibration)
+            if not reference["min"] <= value <= reference["max"]:
+                raise ValueError(f"Unexpected out-of-range value for {entry['code']}: {value}.")
+
+
+def _apply_history_relationships(  # noqa: PLR0913, PLR0917
     rng: random.Random,
     scenario: dict[str, Any],
     histories: list[dict[str, Any]],
     current: list[dict[str, Any]],
+    sex: str,
     calibration: dict[str, Any],
 ) -> None:
     relationships = scenario.get("history_relationships", {})
@@ -892,7 +1003,7 @@ def _apply_history_relationships(
     for item in histories:
         history_groups.setdefault(item["cycle"], []).append(item)
     for group in history_groups.values():
-        _enforce_cbc_coupling(group, rng, calibration)
+        _enforce_cbc_coupling(group, rng, calibration, scenario, sex)
 
 
 def _reference_range(
@@ -910,24 +1021,61 @@ def _enforce_cbc_coupling(
     values: list[dict[str, Any]],
     rng: random.Random,
     calibration: dict[str, Any],
+    scenario: dict[str, Any],
+    sex: str,
 ) -> None:
     by_code = {item["entry"]["code"]: item for item in values}
+    abnormal_analytes = set(scenario.get("abnormal_analytes", []))
     if "718-7" in by_code and "4544-3" in by_code:
+        hgb_item = by_code["718-7"]
+        hgb_entry = hgb_item["entry"]
+        hgb_parameters = calibration["analyte_parameters"][hgb_entry["code"]]
+        hct_item = by_code["4544-3"]
+        hct_entry = hct_item["entry"]
+        hct_parameters = calibration["analyte_parameters"][hct_entry["code"]]
         factor_rule = calibration["hematology_coupling"]["hematocrit_factor"]
-        factor = rng.uniform(factor_rule["min"], factor_rule["max"])
-        by_code["4544-3"]["value"] = round(
-            by_code["718-7"]["value"] * factor, factor_rule["precision"]
+        hgb_range = (
+            {"min": hgb_parameters["physiologic_min"], "max": hgb_parameters["physiologic_max"]}
+            if _is_abnormal_allowed(hgb_entry, scenario, calibration)
+            else _reference_range(hgb_entry, sex, calibration)
         )
+        hct_range = (
+            {"min": hct_parameters["physiologic_min"], "max": hct_parameters["physiologic_max"]}
+            if _is_abnormal_allowed(hct_entry, scenario, calibration)
+            else _reference_range(hct_entry, sex, calibration)
+        )
+        hgb_min = max(hgb_range["min"], hgb_parameters["physiologic_min"])
+        hgb_max = min(hgb_range["max"], hgb_parameters["physiologic_max"])
+        hct_min = max(hct_range["min"], hct_parameters["physiologic_min"])
+        hct_max = min(hct_range["max"], hct_parameters["physiologic_max"])
+        feasible_hgb_min = max(hgb_min, hct_min / factor_rule["max"])
+        feasible_hgb_max = min(hgb_max, hct_max / factor_rule["min"])
+        if feasible_hgb_min > feasible_hgb_max:
+            raise ValueError("No valid coupled hemoglobin and hematocrit interval.")
+        if not feasible_hgb_min <= hgb_item["value"] <= feasible_hgb_max:
+            hgb_item["value"] = _sample_value(
+                rng, feasible_hgb_min, feasible_hgb_max, hgb_entry["precision"]
+            )
+        factor_min = max(factor_rule["min"], hct_min / hgb_item["value"])
+        factor_max = min(factor_rule["max"], hct_max / hgb_item["value"])
+        for _ in range(10_000):
+            factor = rng.uniform(factor_min, factor_max)
+            hct_value = _round_value(hgb_item["value"] * factor, hct_entry["precision"])
+            if hct_min <= hct_value <= hct_max:
+                hct_item["value"] = hct_value
+                break
+        else:
+            raise ValueError("Could not sample coupled hematocrit within valid bounds.")
     if "751-8" not in by_code or "6690-2" not in by_code:
+        return
+    if not {"ANC", "WBC"}.issubset(abnormal_analytes):
         return
     anc = by_code["751-8"]["value"]
     wbc_item = by_code["6690-2"]
     wbc_entry = wbc_item["entry"]
     fraction_rule = calibration["hematology_coupling"]["neutrophil_fraction"]
     fraction = rng.uniform(fraction_rule["min"], fraction_rule["max"])
-    precision = wbc_entry["precision"]
-    wbc = round(anc / fraction, precision)
-    wbc_item["value"] = int(wbc) if precision == 0 else wbc
+    wbc_item["value"] = _round_value(anc / fraction, wbc_entry["precision"])
 
 
 def _render_report(context: _ReportContext) -> str:

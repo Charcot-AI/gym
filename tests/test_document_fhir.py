@@ -180,8 +180,15 @@ def test_every_task_starts_with_an_outpatient_encounter() -> None:
             for entry in task.initial_state["entry"]
             if entry["resource"]["resourceType"] == "Encounter"
         ]
-        assert len(encounters) == 1
-        encounter = encounters[0]
+        current_encounters = [
+            encounter for encounter in encounters if not encounter["id"].startswith("prior-awv-")
+        ]
+        prior_awvs = [
+            encounter for encounter in encounters if encounter["id"].startswith("prior-awv-")
+        ]
+        assert len(current_encounters) == 1
+        assert len(prior_awvs) <= 1
+        encounter = current_encounters[0]
         assert encounter["status"] == "completed"
         assert encounter["class"] == [
             {
