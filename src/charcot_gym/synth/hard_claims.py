@@ -428,8 +428,12 @@ def _task(
     draft_id = None
     if task_type == "claim_fix":
         draft_id = f"draft-claim-hard-claims-{split}-{index:03d}"
+        payer_claim_number = f"NC25-{rng.randrange(10_000, 100_000)}-{index:04d}"
         draft = copy.deepcopy(expected)
         draft["id"] = draft_id
+        draft["identifier"] = [
+            {"system": "https://payer.example/claim-control-number", "value": payer_claim_number}
+        ]
         draft["status"] = "draft"
         draft["use"] = "claim"
         administered = next(
@@ -468,6 +472,7 @@ def _task(
                             draft,
                             " ".join(patient_name),
                             task_mrn,
+                            payer_claim_number,
                             service_date,
                         ),
                         "Remittance advice",
@@ -952,8 +957,8 @@ def _mar_text(
         f"Patient: {patient_name}     MRN: {mrn}     Date of service: {service_date.isoformat()}",
         f"Height: {height_cm} cm     Weight: {weight_kg:.1f} kg     Mosteller BSA: {bsa:.3f} m²",
         "",
-        f"{'Drug':<12} {'Ordered':<10} {'Prepared':<10} {'Vials / lot':<54} {'Discarded':>8}",
-        "-" * 98,
+        f"{'Drug':<16} {'Ordered dose':<16} {'Prepared dose':<16} {'Discarded':>12}",
+        "-" * 64,
     ]
     for row_number, item in enumerate(administrations, 1):
         dose = int(item["dose"])
@@ -974,10 +979,9 @@ def _mar_text(
             vial_text = f"8 mg/4 mL vial x1; lot {lot}"
         else:
             vial_text = f"{dose} mg vial x1; lot {lot}"
-        lines.append(
-            f"{item['name']:<12} {dose} {item['dose_unit']:<5} "
-            f"{dose} {item['dose_unit']:<5} {vial_text:<54} {discarded:>3} mg"
-        )
+        dose_text = f"{dose} {item['dose_unit']}"
+        lines.append(f"{item['name']:<16} {dose_text:<16} {dose_text:<16} {f'{discarded} mg':>12}")
+        lines.append(f"    {item['name']} vials / lot: {vial_text}")
     pharmacist = ("JL", "CM", "RC", "TB")[index % 4]
     lines.extend(
         [
@@ -994,31 +998,38 @@ def _msp_questionnaire_text(
     patient_name: str, mrn: str, status: str, employer_name: str, employee_count: int
 ) -> str:
     employed = status == "employed"
-    status_line = (
-        f"Employment status: [X] Currently employed  [ ] Retired since {status.removeprefix('retired since ')}"
-        if employed
-        else f"Employment status: [ ] Currently employed  [X] Retired since {status.removeprefix('retired since ')}"
-    )
+    employed_box = "[X] Yes [ ] No" if employed else "[ ] Yes [X] No"
+    retired_since = status.removeprefix("retired since ") if not employed else ""
     return "\n".join(
         [
             "MEDICARE SECONDARY PAYER QUESTIONNAIRE",
             f"Patient: {patient_name}     MRN: {mrn}",
-            "Is coverage based on current employment?",
-            status_line,
-            f"Employer name: {employer_name}",
-            f"Employer employee count: {employee_count}",
+            f"Is coverage based on current employment? {employed_box}",
+            "Is this an employer group plan? [X] Yes [ ] No",
+            f"Retired since: {retired_since or '________________'}",
+            "Employer name: ______________________________",
+            f"                 {employer_name}",
+            "Employer employee count: ____________________",
+            f"                         {employee_count}",
+            "Signature: ______________________________  Date: ______________",
             "Please complete for coordination-of-benefits review.",
         ]
     )
 
 
 def _remittance_text(
-    payer: str, claim: dict[str, Any], patient_name: str, mrn: str, service_date: date
+    payer: str,
+    claim: dict[str, Any],
+    patient_name: str,
+    mrn: str,
+    claim_number: str,
+    service_date: date,
 ) -> str:
     lines = [
         f"{payer} — CLAIM REMITTANCE ADVICE",
-        "Claims Processing Center | 100 Example Parkway, Fairhaven, OR 97000",
-        f"Claim number: {claim['id']}",
+        "Claims Processing Center",
+        "100 Example Parkway, Fairhaven, OR 97000",
+        f"Claim number: {claim_number}",
         f"Patient: {patient_name}     MRN: {mrn}",
         f"Date of service: {service_date.isoformat()}",
         "",
@@ -1031,7 +1042,8 @@ def _remittance_text(
         amount = float(item["net"]["value"])
         lines.append(
             f"{code:<10} {int(item['quantity']['value']):>8} "
-            f"${amount:>11.2f} ${0:>11.2f} ${0:>11.2f}"
+            f"{'$' + format(amount, ',.2f'):>12} "
+            f"{'$0.00':>12} {'$0.00':>12}"
         )
     lines.extend(
         [

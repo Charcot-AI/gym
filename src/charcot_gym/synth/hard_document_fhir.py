@@ -579,7 +579,10 @@ def _range_annotation(row: dict[str, Any]) -> tuple[str, str]:
             f"{_format_value(maximum, row['precision'])}"
         )
     elif minimum is not None:
-        interval = f">={_format_value(minimum, row['precision'])}"
+        lower = (
+            f"{minimum:g}" if row["code"] == "98979-8" else _format_value(minimum, row["precision"])
+        )
+        interval = f">={lower}"
     elif maximum is not None:
         interval = f"<={_format_value(maximum, row['precision'])}"
     else:
@@ -656,7 +659,7 @@ def _render_report(  # noqa: PLR0913
     lines.extend(
         [
             "",
-            f"Page 1 of 1   |   {letterhead[0]}",
+            "Page 1 of 1 | lab",
             "SYNTHETIC RECORD — NOT A REAL PATIENT",
         ]
     )
