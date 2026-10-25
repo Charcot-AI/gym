@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from decimal import Decimal
 from typing import Any
 
 from charcot_gym.task import Task
@@ -13,6 +14,16 @@ from charcot_gym.verifier.shared import (
     _has_wrong_patient_write,
     _updates_preexisting,
 )
+
+_UCUM_UNIT_FACTORS = {
+    "g/L": ("mass_concentration", Decimal("1")),
+    "g/dL": ("mass_concentration", Decimal("10")),
+    "mg/dL": ("mass_concentration", Decimal("0.01")),
+    "mg/L": ("mass_concentration", Decimal("0.001")),
+    "/uL": ("cell_count", Decimal("1")),
+    "10*3/uL": ("cell_count", Decimal("1000")),
+    "10*9/L": ("cell_count", Decimal("1000")),
+}
 
 
 class DocumentFhirVerifier:
@@ -146,13 +157,10 @@ def _document_match(
     else:
         quantity = resource.get("valueQuantity")
         value = _decimal(quantity.get("value")) if isinstance(quantity, dict) else None
-        expected_value = _decimal(expected.get("value"))
         result_matches = (
             isinstance(quantity, dict)
             and value is not None
-            and value == expected_value
-            and quantity.get("system") == UCUM_SYSTEM_URI
-            and quantity.get("code") == expected.get("unit")
+            and _quantity_matches(quantity, expected)
             and (
                 expected.get("comparator") is None
                 or quantity.get("comparator") == expected.get("comparator")
@@ -175,13 +183,31 @@ def _document_match(
     )
 
 
+def _quantity_matches(quantity: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
+    value = _decimal(quantity.get("value"))
+    expected_value = _decimal(expected.get("value"))
+    if value is None or expected_value is None or quantity.get("system") != UCUM_SYSTEM_URI:
+        return False
+    unit = quantity.get("code")
+    expected_unit = expected.get("unit")
+    if unit == expected_unit:
+        return value == expected_value
+    unit_factor = _UCUM_UNIT_FACTORS.get(str(unit))
+    expected_factor = _UCUM_UNIT_FACTORS.get(str(expected_unit))
+    return (
+        unit_factor is not None
+        and expected_factor is not None
+        and unit_factor[0] == expected_factor[0]
+        and value * unit_factor[1] == expected_value * expected_factor[1]
+    )
+
+
 def _document_result_match(resource: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
     coding = resource.get("code", {}).get("coding", [])
     quantity = resource.get("valueQuantity")
     if resource.get("resourceType") != "Observation" or not isinstance(quantity, dict):
         return False
     value = _decimal(quantity.get("value"))
-    expected_value = _decimal(expected.get("value"))
     effective = str(resource.get("effectiveDateTime", "")).split("T", maxsplit=1)[0]
     return (
         any(
@@ -191,9 +217,7 @@ def _document_result_match(resource: Mapping[str, Any], expected: Mapping[str, A
             for item in coding
         )
         and value is not None
-        and value == expected_value
-        and quantity.get("system") == UCUM_SYSTEM_URI
-        and quantity.get("code") == expected.get("unit")
+        and _quantity_matches(quantity, expected)
         and (
             expected.get("comparator") is None
             or quantity.get("comparator") == expected.get("comparator")
