@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from charcot_gym.env import ClinicalEnv, Submit, ToolCall
-from charcot_gym.runner.client import ChatClient, ModelConfig, OpenAIChatClient
+from charcot_gym.runner.client import (
+    ChatClient,
+    ChatCompletionError,
+    ChatTimeoutError,
+    ModelConfig,
+    OpenAIChatClient,
+)
 from charcot_gym.task import Task
 from charcot_gym.verifier import Score
 
@@ -40,6 +46,8 @@ class EpisodeResult:
     trajectory: list[dict[str, Any]]
     messages: list[dict[str, Any]]
     error: str | None = None
+    error_kind: str | None = None
+    http_status: int | None = None
 
 
 def run_episode(
@@ -48,9 +56,13 @@ def run_episode(
     *,
     client: ChatClient | None = None,
     attempt: int = 1,
+    episode_timeout_s: float = 600.0,
 ) -> EpisodeResult:
     """Run one isolated task, scoring termination separately from API errors."""
+    if episode_timeout_s <= 0:
+        raise ValueError("episode_timeout_s must be positive")
     started = time.monotonic()
+    deadline = started + episode_timeout_s
     env = ClinicalEnv([task])
     observation = env.reset(task.id, seed=task.seed)
     messages: list[dict[str, Any]] = [
@@ -68,9 +80,16 @@ def run_episode(
     chat = client or OpenAIChatClient(config)
     status = "scored"
     error: str | None = None
+    error_kind: str | None = None
+    http_status: int | None = None
     try:
         while not env.done:
-            response = chat.complete(messages, tools)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ChatTimeoutError("episode deadline exceeded")
+            response = chat.complete(messages, tools, timeout_s=remaining)
+            if time.monotonic() >= deadline:
+                raise ChatTimeoutError("episode deadline exceeded")
             response_usage = response.get("usage", {})
             for key, usage_key in (
                 ("prompt_tokens", "prompt_tokens"),
@@ -134,11 +153,20 @@ def run_episode(
                     break
             if env.done:
                 break
+        if time.monotonic() >= deadline:
+            raise ChatTimeoutError("episode deadline exceeded")
         score = env.score() if env.done else None
     except Exception as exc:  # API and response failures are not scored as zeros.
         status = "errored"
         score = None
         error = str(exc)
+        if isinstance(exc, (ChatTimeoutError, TimeoutError)):
+            error_kind = "timeout"
+        elif isinstance(exc, ChatCompletionError):
+            error_kind = exc.kind
+            http_status = exc.http_status
+        else:
+            error_kind = "episode_error"
     return EpisodeResult(
         task=task,
         attempt=attempt,
@@ -150,6 +178,8 @@ def run_episode(
         trajectory=[entry.model_dump(mode="json") for entry in env.trajectory.entries],
         messages=messages,
         error=error,
+        error_kind=error_kind,
+        http_status=http_status,
     )
 
 
