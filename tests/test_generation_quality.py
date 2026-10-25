@@ -16,7 +16,7 @@ PRIVATE = ROOT / "private" / "tasks"
 
 
 def generated_tasks() -> list[Task]:
-    return load_tasks() + load_tasks(PRIVATE)
+    return [task for task in load_tasks() + load_tasks(PRIVATE) if task.difficulty == "standard"]
 
 
 def observation_code(resource: dict[str, Any]) -> str:

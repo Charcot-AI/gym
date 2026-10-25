@@ -77,7 +77,12 @@ def _entries() -> tuple[dict[str, Any], ...]:
     """Read the bundled subset once per process."""
     data = files("charcot_gym").joinpath("data")
     entries = []
-    for filename in ("loinc_subset.json", "icd10cm_subset.json", "hcpcs_subset.json"):
+    for filename in (
+        "loinc_subset.json",
+        "ucum_subset.json",
+        "icd10cm_subset.json",
+        "hcpcs_subset.json",
+    ):
         content = data.joinpath(filename).read_text(encoding="utf-8")
         subset = json.loads(content)
         if not isinstance(subset, list):
