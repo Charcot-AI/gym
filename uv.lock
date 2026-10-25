@@ -127,6 +127,7 @@ server = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "fastapi" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
@@ -143,6 +144,7 @@ provides-extras = ["server"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },

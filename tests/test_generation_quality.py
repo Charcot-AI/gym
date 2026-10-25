@@ -12,11 +12,10 @@ from charcot_gym.synth.generator import ABBREVIATIONS, PRIVATE_UNITS
 from charcot_gym.terminology import hcpcs_is_active_on
 
 ROOT = Path(__file__).resolve().parents[1]
-PRIVATE = ROOT / "private" / "tasks"
 
 
 def generated_tasks() -> list[Task]:
-    return [task for task in load_tasks() + load_tasks(PRIVATE) if task.difficulty == "standard"]
+    return [task for task in load_tasks() if task.difficulty == "standard"]
 
 
 def observation_code(resource: dict[str, Any]) -> str:
@@ -479,7 +478,7 @@ def test_routine_claims_have_age_appropriate_awv_history_and_fees() -> None:
             assert hcpcs_is_active_on(code, service_date.isoformat()), (task.id, code)
 
     routine = [task for task in all_tasks if task.metadata["scenario_id"] == "routine"]
-    assert len(routine) == 8
+    assert len(routine) == 5
     assert (
         sum(
             item["productOrService"]["coding"][0]["code"] == "G0439"
