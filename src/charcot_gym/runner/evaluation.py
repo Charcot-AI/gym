@@ -27,10 +27,13 @@ def evaluate(  # noqa: PLR0913
     max_cost_usd: float | None,
     out_dir: str | Path,
     client: ChatClient | None = None,
+    episode_timeout_s: float = 600.0,
 ) -> dict[str, Any]:
     """Run attempts until exhausted or the observed cost cap is reached."""
     if attempts < 1 or concurrency < 1:
         raise ValueError("attempts and concurrency must be positive")
+    if episode_timeout_s <= 0:
+        raise ValueError("episode_timeout_s must be positive")
     output = Path(out_dir)
     output.mkdir(parents=True, exist_ok=True)
     private = split == "private"
@@ -45,17 +48,26 @@ def evaluate(  # noqa: PLR0913
     futures: dict[Future[EpisodeResult], tuple[Task, int]] = {}
     spend = 0.0
     launched = 0
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+    with (
+        ThreadPoolExecutor(max_workers=concurrency) as pool,
+        (output / "episodes.jsonl").open("w", encoding="utf-8") as episodes_file,
+    ):
         while True:
             while len(futures) < concurrency and (max_cost_usd is None or spend < max_cost_usd):
                 try:
                     task, attempt = next(jobs)
                 except StopIteration:
                     break
-                futures[pool.submit(run_episode, task, config, client=client, attempt=attempt)] = (
-                    task,
-                    attempt,
-                )
+                futures[
+                    pool.submit(
+                        run_episode,
+                        task,
+                        config,
+                        client=client,
+                        attempt=attempt,
+                        episode_timeout_s=episode_timeout_s,
+                    )
+                ] = (task, attempt)
                 launched += 1
             if not futures:
                 break
@@ -64,21 +76,16 @@ def evaluate(  # noqa: PLR0913
                 futures.pop(future)
                 result = future.result()
                 results.append(result)
+                record = _episode_record(
+                    result,
+                    private=private,
+                    private_key=private_key,
+                    trajectory_dir=trajectory_dir,
+                )
+                episodes_file.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
+                episodes_file.flush()
                 spend += result.cost_usd
-    episodes = [
-        _episode_record(
-            result,
-            private=private,
-            private_key=private_key,
-            trajectory_dir=trajectory_dir,
-        )
-        for result in results
-    ]
-    episodes.sort(key=lambda item: (item.get("task_id", item["task_id_hash"]), item["attempt"]))
-    (output / "episodes.jsonl").write_text(
-        "".join(json.dumps(item, sort_keys=True, ensure_ascii=False) + "\n" for item in episodes),
-        encoding="utf-8",
-    )
+    results.sort(key=lambda result: (result.task.id, result.attempt))
     internal_records = [
         _internal_record(result, private=private, private_key=private_key) for result in results
     ]
@@ -111,6 +118,8 @@ def _episode_record(
         "status": result.status,
         "usage": result.usage,
         "cost_usd": result.cost_usd,
+        "error_kind": result.error_kind,
+        "http_status": result.http_status,
     }
     if private:
         return record
