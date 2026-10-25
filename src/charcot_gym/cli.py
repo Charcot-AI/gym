@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 from charcot_gym.runner.client import ModelConfig
@@ -48,6 +49,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     eval_parser.add_argument("--price-table", type=Path)
     eval_parser.add_argument("--tasks-per-family", type=int)
+    eval_parser.add_argument("--submitter", default="Unspecified")
+    eval_parser.add_argument("--organization", default="Unspecified")
+    eval_parser.add_argument("--submitted", default=date.today().isoformat())
+    eval_parser.add_argument(
+        "--availability", choices=("api", "weights", "unreleased"), default="unreleased"
+    )
     eval_parser.add_argument("--out", type=Path, required=True)
     leaderboard_parser = commands.add_parser(
         "leaderboard", help="merge evaluation summaries into a leaderboard"
@@ -112,6 +119,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             concurrency=args.concurrency,
             max_cost_usd=args.max_cost_usd,
             out_dir=args.out,
+            submitter=args.submitter,
+            organization=args.organization,
+            submitted=args.submitted,
+            availability=args.availability,
             episode_timeout_s=args.episode_timeout_s,
         )
         sys.stdout.write(json.dumps(summary, indent=2, sort_keys=True) + "\n")
