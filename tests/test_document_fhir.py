@@ -503,7 +503,7 @@ def test_report_layouts_and_task_build_check() -> None:
             assert previous_value in text
     assert (
         subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "build_tasks.py"), "--check"],
+            [sys.executable, str(ROOT / "scripts" / "maintenance.py"), "tasks", "--check"],
             cwd=ROOT,
             capture_output=True,
             text=True,

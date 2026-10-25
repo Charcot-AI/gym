@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from charcot_gym import ClinicalEnv, Submit, Task, ToolCall, load_tasks, terminology_search
-from charcot_gym.synth.hard_clinical_coding import PHRASING_POOLS
-from charcot_gym.synth.hard_clinical_coding_v2 import DISTRACTOR_POOL
+from charcot_gym.synth.hard_clinical_coding import DISTRACTOR_POOL, PHRASING_POOLS
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKS = {

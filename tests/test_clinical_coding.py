@@ -420,7 +420,7 @@ def test_public_view_and_task_builder_hide_secrets_and_are_current() -> None:
     public = task.public_view()
     assert "gold" not in public and "metadata" not in public
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_tasks.py"), "--check"],
+        [sys.executable, str(ROOT / "scripts" / "maintenance.py"), "tasks", "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,

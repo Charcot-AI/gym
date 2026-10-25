@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from charcot_gym import Task, load_tasks
-from charcot_gym.synth.generator import ABBREVIATIONS, PRIVATE_UNITS
+from charcot_gym.synth.generator_rendering import ABBREVIATIONS, PRIVATE_UNITS
 from charcot_gym.terminology import hcpcs_is_active_on
 
 ROOT = Path(__file__).resolve().parents[1]
