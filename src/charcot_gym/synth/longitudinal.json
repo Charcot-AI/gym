@@ -1,0 +1,124 @@
+{
+  "profiles": {
+    "ckd_progression": {
+      "kind": "ckd_progression",
+      "encounter_count": {"min": 8, "max": 12},
+      "lipid_codes": ["2093-3", "2085-9", "13457-7", "2571-8"],
+      "cbc_codes": ["718-7", "4544-3", "6690-2", "751-8", "777-3"],
+      "additional_codes": ["3094-0", "2951-2", "2823-3"],
+      "bun_range": {"min": 12, "max": 90},
+      "egfr": {
+        "code": "33914-3",
+        "display": "Glomerular filtration rate/1.73 sq M.predicted",
+        "unit": "mL/min/{1.73_m2}",
+        "precision": 1,
+        "physiologic_min": 1,
+        "physiologic_max": 200,
+        "start": 82,
+        "end": 26,
+        "jitter": 1.5
+      },
+      "conditions": [
+        {
+          "code": "N18.9",
+          "display": "Chronic kidney disease",
+          "clinical_status": "active",
+          "at_fraction": 0
+        },
+        {
+          "code": "N17.9",
+          "display": "Acute kidney injury",
+          "clinical_status": "resolved",
+          "at_fraction": 0.3
+        }
+      ]
+    },
+    "diabetes_course": {
+      "kind": "diabetes_course",
+      "encounter_count": {"min": 8, "max": 12},
+      "lipid_codes": ["2093-3", "2085-9", "13457-7", "2571-8"],
+      "cbc_codes": ["718-7", "4544-3", "6690-2", "751-8", "777-3"],
+      "additional_codes": [],
+      "hba1c": {
+        "code": "4548-4",
+        "glucose_code": "2345-7",
+        "start": 10.2,
+        "end": 7.1,
+        "jitter": 0.25,
+        "glucose_jitter": 8
+      },
+      "conditions": [
+        {
+          "code": "E11.65",
+          "display": "Type 2 diabetes with hyperglycemia",
+          "clinical_status": "active",
+          "at_fraction": 0
+        },
+        {
+          "code": "R73.9",
+          "display": "Hyperglycemia",
+          "clinical_status": "resolved",
+          "at_fraction": 0.7
+        }
+      ]
+    },
+    "oncology_course": {
+      "kind": "oncology_course",
+      "encounter_count": {"min": 8, "max": 14},
+      "lipid_codes": ["2093-3", "2085-9", "13457-7", "2571-8"],
+      "cbc_codes": ["718-7", "4544-3", "6690-2", "751-8", "777-3"],
+      "additional_codes": ["3094-0", "2951-2"],
+      "cycles": {"length_days": 21, "nadir_day": 7},
+      "cbc_ranges": {
+        "nadir": {
+          "718-7": {"min": 8, "max": 10.5},
+          "6690-2": {"min": 0.1, "max": 3},
+          "751-8": {"min": 0.4, "max": 0.7},
+          "777-3": {"min": 40, "max": 120}
+        },
+        "recovery": {
+          "718-7": {"min": 9, "max": 12},
+          "6690-2": {"min": 2.5, "max": 8},
+          "751-8": {"min": 1.5, "max": 5.5},
+          "777-3": {"min": 120, "max": 300}
+        }
+      },
+      "abnormal_analytes": ["Hgb", "Hct", "WBC", "ANC"],
+      "conditions": [
+        {
+          "code": "C50.919",
+          "display": "Malignant neoplasm of breast",
+          "clinical_status": "active",
+          "at_fraction": 0
+        },
+        {
+          "code": "D70.1",
+          "display": "Chemotherapy-induced neutropenia",
+          "clinical_status": "resolved",
+          "at_fraction": 0.35
+        }
+      ]
+    },
+    "stable_routine": {
+      "kind": "stable_routine",
+      "encounter_count": {"min": 6, "max": 10},
+      "lipid_codes": ["2093-3", "2085-9", "13457-7", "2571-8"],
+      "cbc_codes": ["718-7", "4544-3", "6690-2", "751-8", "777-3"],
+      "additional_codes": ["2345-7", "2160-0", "3094-0", "2951-2", "2823-3", "3016-3"],
+      "conditions": [
+        {
+          "code": "I10",
+          "display": "Hypertension",
+          "clinical_status": "active",
+          "at_fraction": 0
+        },
+        {
+          "code": "J06.9",
+          "display": "Acute upper respiratory infection",
+          "clinical_status": "resolved",
+          "at_fraction": 0.5
+        }
+      ]
+    }
+  }
+}
