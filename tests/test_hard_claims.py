@@ -5,14 +5,14 @@ import json
 import math
 import re
 from collections import Counter
-from copy import deepcopy
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+from quality import item_code, modifiers, score_claim
+
 from charcot_gym import ClinicalEnv, Submit, Task, ToolCall, load_tasks
 from charcot_gym.terminology import hcpcs_is_active_on
-from quality import _reprice, item_code, modifiers, score_claim
 
 ROOT = Path(__file__).resolve().parents[1]
 HCPCS = {

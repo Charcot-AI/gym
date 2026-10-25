@@ -472,9 +472,10 @@ def test_leaderboard_filters_partial_runs_and_outputs_selected_split(tmp_path: P
             "ranked": False,
         },
     ]
-    assert "| Model | Submitter | Organization | Submitted | Availability | Partial | Ranked |" in (
-        tmp_path / "leaderboard" / "leaderboard.md"
-    ).read_text()
+    assert (
+        "| Model | Submitter | Organization | Submitted | Availability | Partial | Ranked |"
+        in (tmp_path / "leaderboard" / "leaderboard.md").read_text()
+    )
     assert len(result["models"]) == 1
     model = result["models"][0]
     assert model["provider"] == "openai"
