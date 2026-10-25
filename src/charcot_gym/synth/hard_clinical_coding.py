@@ -208,7 +208,10 @@ def _task(  # noqa: PLR0913, PLR0917
     )
     progression = has_ckd and ckd_occurrence in PROGRESSION_OCCURRENCES
     recurrence = has_ckd and ckd_occurrence in RECURRENCE_OCCURRENCES
-    stage = rng.choice(["3b", "4"]) if progression else rng.choice(["2", "3a", "3b", "4"])
+    if "htn_ckd_presumption" in pack_set:
+        stage = rng.choice(["3a", "3b"])
+    else:
+        stage = rng.choice(["3b", "4"]) if progression else rng.choice(["2", "3a", "3b", "4"])
     stage_code = {"2": "N18.2", "3a": "N18.31", "3b": "N18.32", "4": "N18.4"}[stage]
     poor_control = has_diabetes and rng.random() < 0.35
     symptom = "hyperglycemia" if poor_control and "integral_symptoms" in pack_set else "polyuria"
