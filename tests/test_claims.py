@@ -67,7 +67,11 @@ def test_task_prompts_cover_verifier_literals_and_only_allowed_uris() -> None:
             continue
         prompt = task.prompt
         if task.family == "document_fhir":
-            assert prompt == calibration["document_prompt"]
+            if "source_format" in task.metadata:
+                assert "collection date" in prompt
+                assert "Do not modify existing resources." in prompt
+            else:
+                assert prompt == calibration["document_prompt"]
         elif task.family == "clinical_coding":
             assert prompt == coding["prompt"]
         else:
