@@ -222,6 +222,11 @@ def test_wait_for_viewer_retries_server_errors_and_missing_viewer(
         [
             httpx.Response(500, text="busy", request=request),
             httpx.Response(200, json={"status": "pending"}, request=request),
+            httpx.Response(
+                200,
+                json={"viewer": False, "pending": ["default"]},
+                request=request,
+            ),
             httpx.Response(200, json={"viewer": True}, request=request),
         ]
     )
@@ -237,10 +242,10 @@ def test_wait_for_viewer_retries_server_errors_and_missing_viewer(
 
     hf_datasets.wait_for_viewer("charcot-ai/gym", "test-token")
 
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert calls[0]["params"] == {"dataset": "charcot-ai/gym"}
     assert calls[0]["headers"] == {"Authorization": "Bearer test-token"}
-    assert waits == [15.0, 15.0]
+    assert waits == [15.0, 15.0, 15.0]
 
 
 def test_wait_for_viewer_timeout_reports_last_response_body(
@@ -252,7 +257,12 @@ def test_wait_for_viewer_timeout_reports_last_response_body(
     def fake_get(url: str, **kwargs: Any) -> httpx.Response:
         nonlocal calls
         calls += 1
-        return httpx.Response(503, text="still busy")
+        request = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={"viewer": False, "pending": ["default"]},
+            request=request,
+        )
 
     def fake_sleep(seconds: float) -> None:
         clock[0] += seconds
@@ -261,7 +271,7 @@ def test_wait_for_viewer_timeout_reports_last_response_body(
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(time, "sleep", fake_sleep)
 
-    with pytest.raises(ValueError, match="last response body: still busy"):
+    with pytest.raises(ValueError, match=r'last response body:.*"viewer":false'):
         hf_datasets.wait_for_viewer("charcot-ai/gym", "test-token")
 
     assert calls == 40

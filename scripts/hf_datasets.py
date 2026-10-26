@@ -495,10 +495,8 @@ def wait_for_viewer(repo_id: str, token: str) -> None:
                 payload = response.json()
             except ValueError:
                 payload = None
-            if isinstance(payload, dict) and "viewer" in payload:
-                if payload["viewer"]:
-                    return
-                raise ValueError(f"The dataset viewer is not valid: {last_body}")
+            if isinstance(payload, dict) and payload.get("viewer") is True:
+                return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise ValueError(
