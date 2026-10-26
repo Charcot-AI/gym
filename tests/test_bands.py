@@ -7,7 +7,7 @@ import pytest
 
 from charcot_gym import Task, load_tasks
 from charcot_gym.bands import PassCount, assign_bands, band_for, pass_counts
-from charcot_gym.skeleton import duplicate_rate, skeleton_hash, skeleton_overlap
+from charcot_gym.skeleton import dedup_findings, duplicate_rate, skeleton_hash, skeleton_overlap
 
 spec = importlib.util.spec_from_file_location(
     "gym_maintenance_bands",
@@ -127,8 +127,13 @@ def test_dedup_fails_above_limit():
     ]
     distinct = list({skeleton_hash(task): task for task in unique}.values())[:20]
 
-    assert maintenance.dedup([*distinct, base]) == 0
-    assert maintenance.dedup([*distinct, base, _variant(base, id="copy")]) == 1
+    private = _variant(base, id="private-copy", split="private")
+
+    assert dedup_findings([*distinct, base]) == []
+    assert dedup_findings([*distinct, base, _variant(base, id="copy")]) == [
+        "public: 9.1% of 22 tasks share a skeleton (limit 5%)"
+    ]
+    assert dedup_findings([*distinct, base, private]) == ["private and public share 1 skeletons"]
 
 
 def test_report_band_and_skeleton_sections():
