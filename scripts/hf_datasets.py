@@ -432,7 +432,6 @@ def push_dataset(repo_id: str, *, public: bool) -> int:
 
 def verify_dataset(repo_id: str, revision: str) -> int:
     import datasets  # noqa: PLC0415
-    import httpx  # noqa: PLC0415
     from huggingface_hub import hf_hub_download  # noqa: PLC0415
 
     token = os.environ.get("HF_TOKEN")
@@ -461,20 +460,52 @@ def verify_dataset(repo_id: str, revision: str) -> int:
         version=project_version(),
     ):
         raise ValueError("The main dataset card differs from the generated card.")
-    response = httpx.get(
-        "https://datasets-server.huggingface.co/is-valid",
-        params={"dataset": repo_id},
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30.0,
-    )
-    response.raise_for_status()
-    if not response.json().get("viewer"):
-        raise ValueError("The dataset viewer is not valid.")
+    wait_for_viewer(repo_id, token)
     print(
         f"Verified {len(actual_tasks)} tasks at {repo_id}@{revision}; "
         "all text-task oracle scores are 1.0 and the viewer is valid."
     )
     return 0
+
+
+def wait_for_viewer(repo_id: str, token: str) -> None:
+    import time  # noqa: PLC0415
+
+    import httpx  # noqa: PLC0415
+
+    deadline = time.monotonic() + 600.0
+    last_body = ""
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError(
+                "The dataset viewer did not become valid after 10 minutes; "
+                f"last response body: {last_body}"
+            )
+        response = httpx.get(
+            "https://datasets-server.huggingface.co/is-valid",
+            params={"dataset": repo_id},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=min(30.0, remaining),
+        )
+        last_body = response.text
+        if not 500 <= response.status_code < 600:
+            response.raise_for_status()
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict) and "viewer" in payload:
+                if payload["viewer"]:
+                    return
+                raise ValueError(f"The dataset viewer is not valid: {last_body}")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError(
+                "The dataset viewer did not become valid after 10 minutes; "
+                f"last response body: {last_body}"
+            )
+        time.sleep(min(15.0, remaining))
 
 
 def _features(datasets: Any) -> Any:

@@ -6,11 +6,13 @@ import importlib.util
 import io
 import re
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import datasets
+import httpx
 import huggingface_hub
 import pytest
 
@@ -210,6 +212,59 @@ def test_private_task_parquet_images_use_image_root(tmp_path: Path) -> None:
     ).cast_column("images", datasets.Sequence(datasets.Image(decode=False)))
 
     assert _image_bytes(exported[0]["images"][0]) == image_path.read_bytes()
+
+
+def test_wait_for_viewer_retries_server_errors_and_missing_viewer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("GET", "https://datasets-server.huggingface.co/is-valid")
+    responses = iter(
+        [
+            httpx.Response(500, text="busy", request=request),
+            httpx.Response(200, json={"status": "pending"}, request=request),
+            httpx.Response(200, json={"viewer": True}, request=request),
+        ]
+    )
+    calls: list[dict[str, Any]] = []
+    waits: list[float] = []
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append({"url": url, **kwargs})
+        return next(responses)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(time, "sleep", waits.append)
+
+    hf_datasets.wait_for_viewer("charcot-ai/gym", "test-token")
+
+    assert len(calls) == 3
+    assert calls[0]["params"] == {"dataset": "charcot-ai/gym"}
+    assert calls[0]["headers"] == {"Authorization": "Bearer test-token"}
+    assert waits == [15.0, 15.0]
+
+
+def test_wait_for_viewer_timeout_reports_last_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [0.0]
+    calls = 0
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, text="still busy")
+
+    def fake_sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(time, "sleep", fake_sleep)
+
+    with pytest.raises(ValueError, match="last response body: still busy"):
+        hf_datasets.wait_for_viewer("charcot-ai/gym", "test-token")
+
+    assert calls == 40
 
 
 def test_rendered_card_quick_start_runs_locally(tmp_path: Path) -> None:
