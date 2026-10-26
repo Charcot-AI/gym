@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["fastapi>=0.115", "uvicorn>=0.34"]
+ehr-web = ["fastapi>=0.115", "uvicorn>=0.34", "playwright>=1.55", "Pillow>=11"]
 
 [project.scripts]
 charcot-gym = "charcot_gym.cli:main"
@@ -28,8 +29,10 @@ dev = [
     "huggingface_hub>=0.26",
     "mypy>=1.13",
     "Pillow==11.3.0",
+    "playwright>=1.55",
     "pytest>=8.3",
     "ruff>=0.8",
+    "uvicorn>=0.34",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -56,7 +59,21 @@ ignore = ["D105", "D107", "D203", "D213", "D401", "PLR0911", "PLR0912", "PLR0915
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D", "PLR2004"]
-"scripts/**" = ["D", "PLR2004", "T20"]
+"tests/quality.py" = ["PLC0415"]
+"tests/test_ehr_web.py" = ["PLC0415"]
+"tests/test_ehr_web_browser.py" = ["PLC0415"]
+"scripts/**" = ["D", "PLR2004", "T20", "PLC0415"]
+"src/charcot_gym/ehr_web/*.py" = [
+    "D101",
+    "D102",
+    "D103",
+    "E501",
+    "PLC0415",
+    "PLR0913",
+    "PLR0917",
+]
+"src/charcot_gym/synth/ehr_web.py" = ["D103", "E501", "PLR0913", "PLR0917"]
+"src/charcot_gym/verifier/ehr_web.py" = ["D102", "E501", "PLR0913", "PLR0917"]
 
 [tool.mypy]
 python_version = "3.11"
