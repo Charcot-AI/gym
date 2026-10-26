@@ -36,6 +36,15 @@ from charcot_gym.synth.hard_multitool import prepare_hard_task  # noqa: E402
 from charcot_gym.synth.priors import load_priors  # noqa: E402
 from charcot_gym.task import PUBLIC_CANARY  # noqa: E402
 
+TASKS_START_MARKER = "<!-- tasks:start -->"
+TASKS_END_MARKER = "<!-- tasks:end -->"
+FAMILY_DISPLAY_NAMES = {
+    "claims": "Claims",
+    "clinical_coding": "Clinical coding",
+    "document_fhir": "Document → FHIR",
+    "smoke": "Smoke",
+}
+
 GUID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
     re.IGNORECASE,
@@ -419,7 +428,38 @@ def _generated_private_counts(seed: int) -> Counter[tuple[str, str, str]]:
     )
 
 
-def _quality_report_content() -> str:
+def _task_count_table(
+    public_counts: Counter[tuple[str, str, str]],
+    private_counts: Counter[tuple[str, str, str]],
+) -> list[str]:
+    lines = [
+        "| Family | Family ID | Tier | Modality | Public | Private |",
+        "| --- | --- | --- | --- | ---: | ---: |",
+    ]
+    count_keys = sorted(set(public_counts) | set(private_counts))
+    for family, tier, modality in count_keys:
+        lines.append(
+            f"| {FAMILY_DISPLAY_NAMES.get(family, family.replace('_', ' ').title())} | "
+            f"`{family}` | {tier} | {modality} | "
+            f"{public_counts[(family, tier, modality)]} | "
+            f"{private_counts[(family, tier, modality)]} |"
+        )
+    lines.append(
+        f"| **Total** |  |  |  | **{sum(public_counts.values())}** | "
+        f"**{sum(private_counts.values())}** |"
+    )
+    return lines
+
+
+def _replace_readme_task_table(readme: str, task_table: str) -> str:
+    if readme.count(TASKS_START_MARKER) != 1 or readme.count(TASKS_END_MARKER) != 1:
+        raise ValueError("README task markers must appear exactly once")
+    start = readme.index(TASKS_START_MARKER) + len(TASKS_START_MARKER)
+    end = readme.index(TASKS_END_MARKER, start)
+    return readme[:start] + "\n" + task_table + "\n" + readme[end:]
+
+
+def _quality_report_artifacts() -> tuple[str, str]:
     quality_path = ROOT / "tests" / "quality.py"
     spec = importlib.util.spec_from_file_location("gym_quality", quality_path)
     if spec is None or spec.loader is None:
@@ -465,6 +505,7 @@ def _quality_report_content() -> str:
         1 for image_root in image_roots if image_root.exists() for _ in image_root.rglob("*.png")
     )
 
+    task_table_lines = _task_count_table(public_counts, private_counts)
     lines = [
         "# Quality report",
         "",
@@ -472,20 +513,8 @@ def _quality_report_content() -> str:
         "",
         "## Task counts",
         "",
-        "| Family | Tier | Modality | Public | Private |",
-        "| --- | --- | --- | ---: | ---: |",
+        *task_table_lines,
     ]
-    count_keys = sorted(set(public_counts) | set(private_counts))
-    for family, tier, modality in count_keys:
-        lines.append(
-            f"| {family} | {tier} | {modality} | "
-            f"{public_counts[(family, tier, modality)]} | "
-            f"{private_counts[(family, tier, modality)]} |"
-        )
-    lines.append(
-        f"| **Total** |  |  | **{sum(public_counts.values())}** | "
-        f"**{sum(private_counts.values())}** |"
-    )
     lines.extend(
         [
             "",
@@ -526,21 +555,39 @@ def _quality_report_content() -> str:
             "",
         ]
     )
-    return "\n".join(lines)
+    return "\n".join(lines), "\n".join(task_table_lines)
+
+
+def _quality_report_content() -> str:
+    return _quality_report_artifacts()[0]
 
 
 def quality_report(*, check: bool = False) -> int:
-    rendered = _quality_report_content()
+    rendered, task_table = _quality_report_artifacts()
     report_path = ROOT / "docs" / "quality-report.md"
+    readme_path = ROOT / "README.md"
+    if not readme_path.is_file():
+        print("README is missing.")
+        return 1
+    readme = readme_path.read_text(encoding="utf-8")
+    try:
+        rendered_readme = _replace_readme_task_table(readme, task_table)
+    except ValueError:
+        print("README task markers are missing or invalid.")
+        return 1
     if check:
         if not report_path.is_file() or report_path.read_text(encoding="utf-8") != rendered:
             print("Quality report differs from deterministic output.")
             return 1
-        print("Quality report is current.")
+        if readme != rendered_readme:
+            print("README task table differs from deterministic output.")
+            return 1
+        print("Quality report and README task table are current.")
         return 0
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(rendered, encoding="utf-8")
-    print(f"Wrote {report_path.relative_to(ROOT)}.")
+    readme_path.write_text(rendered_readme, encoding="utf-8")
+    print(f"Wrote {report_path.relative_to(ROOT)} and README task table.")
     return 0
 
 
