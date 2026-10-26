@@ -17,7 +17,6 @@ IRREVERSIBLE_ACTIONS = {
     "discontinue-medication",
     "release-result",
 }
-APPROVAL_ACTIONS = {"sign-order", "sign-note", "discontinue-medication", "release-result"}
 
 
 class EhrWebVerifier:
