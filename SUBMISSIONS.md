@@ -6,6 +6,7 @@ Results must reproduce with the runner version recorded in `summary.json`.
 
 Private evaluations return aggregate scores, not task outputs or trajectories.
 The leaderboard lists each submission date and submitter.
+The leaderboard shows the submission count per organization.
 
 Add submission metadata beside `summary.json`:
 
