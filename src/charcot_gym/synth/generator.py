@@ -423,8 +423,6 @@ def _generate_split(
         ]
         scenario_id = scenario["id"]
         metadata: dict[str, Any] = {"scenario_id": scenario_id, "layout": layout}
-        if task_family == "document_fhir":
-            metadata["source_level"] = "f1" if layout == "narrative" else "f0"
         if variant is not None:
             assert subvariant is not None
             metadata["variant"] = variant
@@ -464,6 +462,11 @@ def _generate_split(
             {
                 "id": f"{task_family.replace('_', '-')}-{split}-{index + 1:03d}",
                 "family": task_family,
+                **(
+                    {"source_level": "f1" if layout == "narrative" else "f0"}
+                    if task_family == "document_fhir"
+                    else {}
+                ),
                 "split": split,
                 "version": "1",
                 "prompt": prompt,

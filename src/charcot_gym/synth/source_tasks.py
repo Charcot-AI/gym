@@ -176,7 +176,8 @@ def _task(  # noqa: PLR0913, PLR0917
         "verifier": "document_fhir",
         "max_steps": 96,
         "seed": seed,
-        "metadata": {"source_level": level, "source_format": format, "scenario_id": facts.scenario},
+        "source_level": level,
+        "metadata": {"source_format": format, "scenario_id": facts.scenario},
     }
 
 

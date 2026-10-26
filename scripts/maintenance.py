@@ -656,9 +656,7 @@ def _quality_report_artifacts() -> tuple[str, str]:
             "| --- | --- | ---: | ---: |",
         ]
     )
-    levels = Counter(
-        task.metadata["source_level"] for task in tasks if "source_level" in task.metadata
-    )
+    levels = Counter(task.source_level for task in tasks if task.source_level is not None)
     if levels:
         lines[lines.index("## Invariants") : lines.index("## Invariants")] = [
             "## Source levels",

@@ -314,6 +314,7 @@ def _convert_task(  # noqa: PLR0913, PLR0917
     )
     preexisting = list(source["gold"]["preexisting_ids"])
     task["family"] = "claims"
+    task.pop("source_level", None)
     task["id"] = task_id
     task["verifier"] = "claims"
     task["tools"] = list(dict.fromkeys([*task["tools"], "healthplan_rules"]))
@@ -325,7 +326,7 @@ def _convert_task(  # noqa: PLR0913, PLR0917
         else config["review_note"],
     }
     task["metadata"] = {
-        **{key: value for key, value in source["metadata"].items() if key != "source_level"},
+        **source["metadata"],
         "task_type": task_type,
         "healthplan_id": healthplan_id,
         "note_only_doses": note_only,

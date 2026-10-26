@@ -256,7 +256,7 @@ def test_packaged_source_flags_and_physiology(task: Task) -> None:
     env = ClinicalEnv([task])
     env.reset(task.id)
     format = task.metadata["source_format"]
-    if task.metadata["source_level"] == "f4":
+    if task.source_level == "f4":
         for call in _calls(task):
             if call.name not in {"inbox_get", "inbox_attachment_get"}:
                 continue
@@ -314,7 +314,7 @@ def test_source_oracle_and_reference_extraction(task: Task) -> None:
     env.reset(task.id)
     format = task.metadata["source_format"]
     texts = []
-    if task.metadata["source_level"] == "f4":
+    if task.source_level == "f4":
         for call in _calls(task):
             if call.name in {"inbox_get", "inbox_attachment_get"}:
                 output = env.step(call).observation.result
@@ -365,7 +365,7 @@ def test_source_traps_reject_naive_and_shortcut_writes(format: str, mode: str, s
         assert _episode(task, []).value == 0
         return
     if mode == "shortcut":
-        if task.metadata["source_level"] == "f4":
+        if task.source_level == "f4":
             score = _episode(task, writes + reads)
             name = "source_access"
         else:
@@ -507,6 +507,11 @@ def test_opt_in_pagination_and_attachment_visibility() -> None:
 def test_source_task_generation_and_existing_task_compatibility() -> None:
     generated = generate_source_tasks(123)
     assert generated == generate_source_tasks(123)
+    for data in generated:
+        assert "source_level" not in data["metadata"]
+        task = Task.model_validate(data)
+        assert task.source_level == data["source_level"]
+        assert task.model_dump(mode="json")["source_level"] == data["source_level"]
     assert len({task["seed"] for task in generated}) == 24
     assert (
         len(
@@ -526,17 +531,16 @@ def test_source_task_generation_and_existing_task_compatibility() -> None:
     with pytest.raises(ValueError, match="unknown source format"):
         render_report(build_facts(123), "absent")
     for task in load_tasks():
+        assert "source_level" not in task.metadata
         if task.family != "document_fhir":
-            assert "source_level" not in task.metadata
+            assert task.source_level is None
             continue
-        assert task.metadata["source_level"] in LEVEL_FORMATS
+        assert task.source_level in LEVEL_FORMATS
         if "source_format" in task.metadata or task.modality != "text":
             continue
-        without_level = task.model_copy(
-            update={
-                "metadata": {
-                    key: value for key, value in task.metadata.items() if key != "source_level"
-                }
-            }
-        )
+        if task.difficulty == "hard":
+            assert task.source_level == "f3"
+        else:
+            assert task.source_level == ("f1" if task.metadata["layout"] == "narrative" else "f0")
+        without_level = task.model_copy(update={"source_level": None})
         assert _episode(task, _calls(task)) == _episode(without_level, _calls(without_level))

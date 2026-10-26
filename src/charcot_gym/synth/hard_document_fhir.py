@@ -818,10 +818,10 @@ def _generate_task(  # noqa: PLR0913
             "preexisting_ids": all_ids,
         },
         "verifier": "document_fhir",
+        "source_level": "f3",
         "max_steps": 96,
         "seed": seed,
         "metadata": {
-            "source_level": "f3",
             "profile": profile_name,
             "trap_types": list(traps),
             "layout_variants": [spec[5] for spec in report_specs],
