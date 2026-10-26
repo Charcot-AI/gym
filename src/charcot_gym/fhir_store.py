@@ -21,6 +21,8 @@ SUPPORTED_TYPES = {
     "Communication",
     "Provenance",
     "AllergyIntolerance",
+    "MedicationStatement",
+    "QuestionnaireResponse",
     "ClaimResponse",
     "Claim",
     "Task",
@@ -35,6 +37,8 @@ REQUIRED_FIELDS = {
     "Organization": (),
     "Coverage": ("status", "beneficiary", "payor"),
     "MedicationAdministration": ("status", "medication", "subject"),
+    "MedicationStatement": ("status", "medication", "subject"),
+    "QuestionnaireResponse": ("status", "subject"),
     "ClaimResponse": ("status", "type", "use", "patient", "outcome"),
     "Claim": ("status", "type", "use", "patient"),
     "Task": ("status", "intent"),
@@ -50,6 +54,8 @@ PATIENT_REFERENCE_FIELDS = {
     "Encounter": "subject",
     "DocumentReference": "subject",
     "MedicationAdministration": "subject",
+    "MedicationStatement": "subject",
+    "QuestionnaireResponse": "subject",
     "Coverage": "beneficiary",
     "Claim": "patient",
     "ClaimResponse": "patient",
@@ -68,6 +74,8 @@ SUBJECT_SEARCH_TYPES = {
     "ServiceRequest",
     "MedicationRequest",
     "Communication",
+    "MedicationStatement",
+    "QuestionnaireResponse",
 }
 DATE_FIELDS = {
     "Observation": (("effectiveDateTime",),),
@@ -83,6 +91,8 @@ DATE_FIELDS = {
     "MedicationRequest": (("authoredOn",),),
     "Communication": (("sent",),),
     "Provenance": (("recorded",),),
+    "MedicationStatement": (("effectiveDateTime",),),
+    "QuestionnaireResponse": (("authored",),),
     "Claim": (("created",),),
 }
 SUPPORTED_SEARCH_PARAMETERS = {
