@@ -21,3 +21,15 @@ uv run python scripts/maintenance.py tasks --check
 uv run python scripts/maintenance.py report --check
 uv build
 ```
+
+## Browser tests
+
+Install the development group and Chromium before running browser tests:
+
+```sh
+uv sync --group dev
+uv run playwright install chromium
+CHARCOT_REQUIRE_BROWSER=1 uv run pytest tests/test_ehr_web_browser.py
+```
+
+Regenerate screenshot hashes with `uv run python scripts/maintenance.py screenshots`.

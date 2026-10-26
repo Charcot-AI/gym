@@ -14,10 +14,13 @@ jobs:
         with:
           python-version: "3.11"
       - run: uv sync
+      - run: uv run playwright install --with-deps chromium
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
       - run: uv run pytest
+        env:
+          CHARCOT_REQUIRE_BROWSER: "1"
       - run: uv run python scripts/maintenance.py check
       - run: uv run python scripts/maintenance.py tasks --check
       - run: uv run python scripts/maintenance.py report --check
