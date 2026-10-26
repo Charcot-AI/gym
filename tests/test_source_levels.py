@@ -3,10 +3,12 @@ from __future__ import annotations
 import base64
 import csv
 import io
+import json
 import re
 from copy import deepcopy
 from dataclasses import asdict, replace
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -33,7 +35,7 @@ def _calls(task: Task) -> list[ToolCall]:
     return [call for turn in oracle_turns(task) for call in turn]
 
 
-def _parse(text: str, format: str, mrn: str) -> list[dict[str, Any]]:
+def _parse(text: str, format: str, mrn: str, *, raw: bool = False) -> list[dict[str, Any]]:
     if format == "hl7":
         lines = text.splitlines()
         fields = next(line.split("|") for line in lines if line.startswith("OBR|"))
@@ -60,12 +62,12 @@ def _parse(text: str, format: str, mrn: str) -> list[dict[str, Any]]:
                     )
                 )
         return result
-    if format == "superseded" and "Report status: amended final" in text:
+    if not raw and format == "superseded" and "Report status: amended final" in text:
         text = text.split("Report status: amended final\n")[1]
     sections = re.split(r"Synthetic Laboratory Report \| ", text)
     result = []
     for section in sections[1:]:
-        if f"MRN: {mrn} |" not in section:
+        if not raw and f"MRN: {mrn} |" not in section:
             continue
         date_match = re.search(r"Collected: ([^ |]+)", section)
         assert date_match is not None
@@ -121,16 +123,20 @@ def _parse(text: str, format: str, mrn: str) -> list[dict[str, Any]]:
                     low, high = bounds.split("-")
                     rows.append((code, display, value, unit, low, high, flag, comment))
         for code, display, value, unit, low, high, flag, comment in rows:
-            if format == "impossible" and (
-                (code == "2823-3" and float(value) > 20)
-                or (code == "2345-7" and float(value) > 2000)
-                or (code == "2160-0" and float(value) > 50)
+            if (
+                not raw
+                and format == "impossible"
+                and (
+                    (code == "2823-3" and float(value) > 20)
+                    or (code == "2345-7" and float(value) > 2000)
+                    or (code == "2160-0" and float(value) > 50)
+                )
             ):
                 continue
             number = float(value)
             canonical_unit = unit
             lower, upper = float(low), float(high)
-            if format == "converted_units":
+            if not raw and format == "converted_units":
                 factor = {"2345-7": 18.016, "2160-0": 1 / 88.42}.get(code, 1)
                 number *= factor
                 lower, upper = lower * factor, upper * factor
@@ -191,6 +197,83 @@ def test_formats_exercise_varied_facts(level: str, format: str) -> None:
         assert len({getattr(report, field) for report in reports}) > 1, (level, format, field)
     assert len({frozenset(r.code for r in report.results) for report in reports}) > 1
     assert len({tuple(r.value for r in report.results) for report in reports}) > 1
+
+
+def _assert_flags_and_physiology(text: str, format: str) -> None:
+    calibration = json.loads(
+        (Path(__file__).resolve().parents[1] / "src/charcot_gym/synth/calibration.json").read_text()
+    )
+    sections = re.split(r"(?=Synthetic Laboratory Report \| )", text)
+    outside = []
+    for section in sections:
+        rows = _parse(section, format, "", raw=True)
+        values = {}
+        for row in rows:
+            value, low, high = row["value"], row["low"], row["high"]
+            assert row["flag"] == ("L" if value < low else "H" if value > high else "N"), row
+            factor = 1.0
+            if row["code"] == "2345-7" and row["unit"] == "mmol/L":
+                factor = 18.016
+            elif row["code"] == "2160-0" and row["unit"] == "umol/L":
+                factor = 1 / 88.42
+            value *= factor
+            parameters = calibration["analyte_parameters"][row["code"]]
+            if (
+                not parameters["physiologic_min"] - 0.0001
+                <= value
+                <= parameters["physiologic_max"] + 0.0001
+            ):
+                outside.append(row)
+            values[row["code"]] = value
+        if {"718-7", "4544-3"}.issubset(values):
+            assert values["4544-3"] == pytest.approx(3 * values["718-7"], rel=0.11)
+        if {"751-8", "6690-2"}.issubset(values):
+            assert 0.4 <= values["751-8"] / values["6690-2"] <= 0.75
+    assert len(outside) == (1 if format == "impossible" else 0), outside
+
+
+@pytest.mark.parametrize(("level", "format"), FORMATS)
+@pytest.mark.parametrize("seed", range(72, 82))
+def test_rendered_flags_and_physiology(level: str, format: str, seed: int) -> None:
+    report = build_facts(seed)
+    report = replace(
+        report, results=tuple(replace(row, flag="incorrect") for row in report.results)
+    )
+    text = render_report(report, format)
+    _assert_flags_and_physiology(text, format)
+    if format == "superseded":
+        earlier, final = text.split("Report status: amended final\n")
+        stale = {row["code"]: row["value"] for row in _parse(earlier, "table", "", raw=True)}
+        current = {row["code"]: row["value"] for row in _parse(final, "table", "", raw=True)}
+        changed = [code for code in current if current[code] != stale[code]]
+        assert len(changed) == 1
+        assert changed[0] in {"2345-7", "2160-0", "2823-3", "2951-2", "3094-0"}
+        assert 0 < abs(stale[changed[0]] / current[changed[0]] - 1) <= 0.1
+
+
+@pytest.mark.parametrize("task", TASKS, ids=lambda task: task.id)
+def test_packaged_source_flags_and_physiology(task: Task) -> None:
+    env = ClinicalEnv([task])
+    env.reset(task.id)
+    format = task.metadata["source_format"]
+    if task.metadata["source_level"] == "f4":
+        for call in _calls(task):
+            if call.name not in {"inbox_get", "inbox_attachment_get"}:
+                continue
+            output = env.step(call).observation.result
+            text = output["content"] if isinstance(output, dict) else output
+            _assert_flags_and_physiology(text, "table")
+    else:
+        output = env.step(
+            ToolCall(name="fhir_search", arguments={"resource_type": "DocumentReference"})
+        ).observation.result
+        for resource in output["resources"]:
+            text = base64.b64decode(resource["content"][0]["attachment"]["data"]).decode()
+            _assert_flags_and_physiology(text, format)
+
+
+def test_source_scenarios_vary() -> None:
+    assert len({task.metadata["scenario_id"] for task in TASKS}) > 1
 
 
 @pytest.mark.parametrize("mode", ["unfiltered", "direct"])
@@ -300,7 +383,17 @@ def test_source_traps_reject_naive_and_shortcut_writes(format: str, mode: str, s
         name = TRAPS[format]
         first = writes[0].arguments["resource"]
         if format in {"superseded", "same_name", "attachment"}:
-            first["valueQuantity"]["value"] += 10
+            invalid = (
+                task.gold["source_forbidden"]["preliminary_value_recorded"]
+                if format == "attachment"
+                else task.gold["forbidden"]
+            )[0]
+            wrong = next(
+                call.arguments["resource"]
+                for call in writes
+                if call.arguments["resource"]["code"]["coding"][0]["code"] == invalid["code"]
+            )
+            wrong["valueQuantity"]["value"] = invalid["value"]
         elif format == "converted_units":
             for call in writes:
                 resource = call.arguments["resource"]

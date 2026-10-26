@@ -7,7 +7,7 @@ import io
 from dataclasses import replace
 from datetime import date
 
-from charcot_gym.synth.source_formats.facts import LabReport
+from charcot_gym.synth.source_formats.facts import LabReport, LabResult, preliminary_report
 
 LEVEL_FORMATS = {
     "f0": ("table", "key_value"),
@@ -16,6 +16,10 @@ LEVEL_FORMATS = {
     "f3": ("superseded", "converted_units", "ambiguous_date", "same_name", "impossible"),
     "f4": ("paged_inbox", "attachment", "split_attachments"),
 }
+
+
+def _flag(result: LabResult) -> str:
+    return "L" if result.value < result.low else "H" if result.value > result.high else "N"
 
 
 def _header(report: LabReport) -> str:
@@ -29,7 +33,8 @@ def _header(report: LabReport) -> str:
 def _table(report: LabReport) -> str:
     rows = ["LOINC | Test | Result | UCUM | Reference | Flag | Comment"]
     rows.extend(
-        f"{r.code} | {r.display} | {r.value} | {r.unit} | {r.low}-{r.high} | {r.flag} | {r.comment}"
+        f"{r.code} | {r.display} | {r.value} | {r.unit} | "
+        f"{r.low}-{r.high} | {_flag(r)} | {r.comment}"
         for r in report.results
     )
     return _header(report) + "\n".join(rows) + "\n"
@@ -40,7 +45,7 @@ def _key_value(report: LabReport) -> str:
         _header(report)
         + "\n".join(
             f"{r.display} ({r.code}): {r.value} {r.unit}; reference {r.low}-{r.high}; "
-            f"flag {r.flag}; comment {r.comment}"
+            f"flag {_flag(r)}; comment {r.comment}"
             for r in report.results
         )
         + "\n"
@@ -52,7 +57,7 @@ def _narrative(report: LabReport) -> str:
         _header(report)
         + "\n".join(
             f"The {r.display} (LOINC {r.code}) was {r.value} {r.unit} "
-            f"(reference {r.low}-{r.high}; flag {r.flag}). Lab comment: {r.comment}"
+            f"(reference {r.low}-{r.high}; flag {_flag(r)}). Lab comment: {r.comment}"
             for r in report.results
         )
         + "\n"
@@ -64,7 +69,7 @@ def _csv(report: LabReport) -> str:
     writer = csv.writer(stream, lineterminator="\n")
     writer.writerow(["LOINC", "Test", "Result", "UCUM", "Low", "High", "Flag", "Comment"])
     for r in report.results:
-        writer.writerow([r.code, r.display, r.value, r.unit, r.low, r.high, r.flag, r.comment])
+        writer.writerow([r.code, r.display, r.value, r.unit, r.low, r.high, _flag(r), r.comment])
     return _header(report) + stream.getvalue()
 
 
@@ -82,7 +87,7 @@ def _hl7(report: LabReport) -> str:
     for index, r in enumerate(report.results, 1):
         rows.append(
             f"OBX|{index}|NM|{r.code}^{r.display}^LN||{r.value}|{r.unit}^^UCUM|"
-            f"{r.low}-{r.high}|{r.flag}|||F|||{collected}"
+            f"{r.low}-{r.high}|{_flag(r)}|||F|||{collected}"
         )
         rows.append(f"NTE|{index}||{r.comment}")
     return "\n".join(rows) + "\n"
@@ -102,7 +107,7 @@ def _reordered(report: LabReport) -> str:
         _header(report)
         + "UCUM | Reference | LOINC | Flag | Result | Test | Comment\n"
         + "\n".join(
-            f"{r.unit} | {r.low}-{r.high} | {r.code} | {r.flag} | "
+            f"{r.unit} | {r.low}-{r.high} | {r.code} | {_flag(r)} | "
             f"{r.value} | {r.display} | {r.comment}"
             for r in report.results
         )
@@ -127,9 +132,8 @@ def render_report(report: LabReport, format: str) -> str:
         raise ValueError(f"unknown source format: {format}")
     if not report.results:
         return _table(report)
-    first, *rest = report.results
     if format == "superseded":
-        earlier = replace(report, results=(replace(first, value=first.value + 10), *rest))
+        earlier = preliminary_report(report)
         return (
             "Report status: preliminary\n"
             + _table(earlier)
@@ -160,10 +164,9 @@ def render_report(report: LabReport, format: str) -> str:
         )
     if format == "same_name":
         foreign = replace(
-            report,
+            preliminary_report(report),
             dob="1974-09-21",
             mrn=report.mrn + "-OTHER",
-            results=(replace(first, value=first.value + 10),),
         )
         return _table(foreign) + _table(report)
     if format == "impossible":

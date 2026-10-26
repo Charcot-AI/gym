@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -40,6 +40,30 @@ class LabReport:
     reported: str
     results: tuple[LabResult, ...]
     scenario: str = "routine"
+
+
+def preliminary_report(report: LabReport) -> LabReport:
+    """Vary one chemistry result without disturbing coupled blood counts or lipids."""
+    if not report.results:
+        return report
+    target = next(
+        r for r in report.results if r.code in {"2345-7", "2160-0", "2823-3", "2951-2", "3094-0"}
+    )
+    calibration = json.loads((Path(__file__).resolve().parents[1] / "calibration.json").read_text())
+    parameters = calibration["analyte_parameters"][target.code]
+    for factor in (1.05, 0.95):
+        value = round(target.value * factor, parameters["precision"])
+        if (
+            value != target.value
+            and parameters["physiologic_min"] <= value <= parameters["physiologic_max"]
+        ):
+            return replace(
+                report,
+                results=tuple(
+                    replace(r, value=value) if r.code == target.code else r for r in report.results
+                ),
+            )
+    raise ValueError("Could not vary a preliminary chemistry result.")
 
 
 def build_facts(seed: int) -> LabReport:
