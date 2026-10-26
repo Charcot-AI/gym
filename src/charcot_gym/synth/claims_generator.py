@@ -325,7 +325,7 @@ def _convert_task(  # noqa: PLR0913, PLR0917
         else config["review_note"],
     }
     task["metadata"] = {
-        **source["metadata"],
+        **{key: value for key, value in source["metadata"].items() if key != "source_level"},
         "task_type": task_type,
         "healthplan_id": healthplan_id,
         "note_only_doses": note_only,
