@@ -72,10 +72,12 @@ def test_pass_counts_pool_selected_models_and_skip_unscored(tmp_path):
 
 def test_task_fields_load_and_promote_metadata_source_level():
     task = TASKS["document-fhir-public-001"]
-    assert (task.band, task.source_level) == (None, None)
+    assert (task.band, task.source_level) == (None, "f0")
 
     data = task.model_dump(mode="json")
-    promoted = Task.model_validate({**data, "metadata": {**data["metadata"], "source_level": "f2"}})
+    promoted = Task.model_validate(
+        {**data, "source_level": None, "metadata": {**data["metadata"], "source_level": "f2"}}
+    )
     assert promoted.source_level == "f2"
     assert "source_level" not in promoted.metadata
 
@@ -143,7 +145,7 @@ def test_report_band_and_skeleton_sections():
         "| Family | Band | Source level | Tasks |",
         "| --- | --- | --- | ---: |",
         "| `claims` | uncalibrated | unassigned | 1 |",
-        "| `document_fhir` | d1 | unassigned | 1 |",
+        "| `document_fhir` | d1 | f0 | 1 |",
         "| `document_fhir` | uncalibrated | f2 | 1 |",
     ]
     assert maintenance._skeleton_lines([*tasks, _variant(base, id="third")]) == [
