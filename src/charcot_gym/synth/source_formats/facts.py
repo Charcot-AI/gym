@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from charcot_gym.synth.generator import NAMES
+from charcot_gym.synth.generator import NAMES, _choose_panels
 from charcot_gym.synth.lab_generation import _CurrentContext, _draw_current
 from charcot_gym.synth.lab_values import _reference_range
 
@@ -39,20 +39,28 @@ class LabReport:
     collected: str
     reported: str
     results: tuple[LabResult, ...]
+    scenario: str = "routine"
 
 
 def build_facts(seed: int) -> LabReport:
-    """Draw a coupled routine panel from the bundled calibration."""
+    """Draw patient-specific coupled panels from the bundled calibration."""
     rng = random.Random(seed)
     root = Path(__file__).resolve().parents[2]
     calibration = json.loads((root / "synth/calibration.json").read_text())
     analytes = json.loads((root / "data/loinc_subset.json").read_text())
-    codes = {"2345-7", "2160-0", "2823-3", "718-7", "4544-3", "6690-2", "751-8"}
-    analytes = [entry for entry in analytes if entry["code"] in codes]
+    scenarios = json.loads((root / "synth/scenarios.json").read_text())["scenarios"]
+    scenario = rng.choice(
+        [s for s in scenarios if s["id"] in {"routine", "hypokalemia", "uncontrolled_diabetes"}]
+    )
+    panels = _choose_panels(rng, scenario["panels"], calibration) | {"CBC + ANC"}
+    codes = {"718-7", "4544-3", "6690-2", "751-8"}
+    codes.update(rng.sample(["2345-7", "2160-0"], rng.randint(1, 2)))
+    analytes = [
+        entry for entry in analytes if entry["code"] in codes or entry.get("panel") in panels
+    ]
     for entry in analytes:
         entry["precision"] = calibration["analyte_parameters"][entry["code"]]["precision"]
     sex = rng.choice(["female", "male"])
-    scenario = {"id": "routine", "current_rules": {}, "abnormal_analytes": []}
     fraction = calibration["hematology_coupling"]["neutrophil_fraction"]
     for _ in range(10_000):
         current = _draw_current(
@@ -80,14 +88,18 @@ def build_facts(seed: int) -> LabReport:
                 "Specimen quality acceptable.",
             )
         )
-    collected = date(2025, 1, 1) + timedelta(days=rng.randrange(300))
+    rng.shuffle(results)
+    month, day = rng.sample(range(1, 13), 2)
+    collected = date(rng.randint(2023, 2025), month, day)
+    reported = collected.replace(day=rng.randint(18, 28))
     return LabReport(
         " ".join(rng.choice(NAMES)),
-        "1982-03-14",
+        (date(1950, 1, 1) + timedelta(days=rng.randrange(20_000))).isoformat(),
         f"SYN-{seed}",
         sex,
         f"LAB-{seed}",
         collected.isoformat(),
-        (collected + timedelta(days=1)).isoformat(),
+        reported.isoformat(),
         tuple(results),
+        scenario["id"],
     )
