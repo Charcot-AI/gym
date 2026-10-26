@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -1159,6 +1160,396 @@ _register(
         display="Total score [AUDIT-C]",
         tolerance=0,
         questionnaire="http://loinc.org/q/72109-2",
+    )
+)
+
+
+MG_DL_TO_MMOL_L = 0.02586
+TOTAL_CHOLESTEROL = _number("total_cholesterol_mg_dl", "mg/dL", "Total cholesterol")
+HDL_CHOLESTEROL = _number("hdl_mg_dl", "mg/dL", "HDL cholesterol")
+RISK_DIABETES = _flag("diabetes", "Diabetes mellitus")
+CURRENT_SMOKER = _flag("current_smoker", "Current cigarette smoking")
+ANTIHYPERTENSIVE = _flag("antihypertensive", "Current antihypertensive medication")
+
+# Simplified base model for 10-year total CVD, in this term order: age, non-HDL-C, HDL-C,
+# SBP <110, SBP >=110, diabetes, smoking, eGFR <60, eGFR >=60, antihypertensive, statin,
+# treated SBP, treated non-HDL-C, age x non-HDL-C, age x HDL-C, age x SBP, age x diabetes,
+# age x smoking, age x eGFR <60, constant.
+PREVENT_TOTAL_CVD: dict[str, tuple[float, ...]] = {
+    "female": (
+        0.7939329,
+        0.0305239,
+        -0.1606857,
+        -0.2394003,
+        0.3600781,
+        0.8667604,
+        0.5360739,
+        0.6045917,
+        0.0433769,
+        0.3151672,
+        -0.1477655,
+        -0.0663612,
+        0.1197879,
+        -0.0819715,
+        0.0306769,
+        -0.0946348,
+        -0.27057,
+        -0.078715,
+        -0.1637806,
+        -3.307728,
+    ),
+    "male": (
+        0.7688528,
+        0.0736174,
+        -0.0954431,
+        -0.4347345,
+        0.3362658,
+        0.7692857,
+        0.4386871,
+        0.5378979,
+        0.0164827,
+        0.288879,
+        -0.1337349,
+        -0.0475924,
+        0.150273,
+        -0.0517874,
+        0.0191169,
+        -0.1049477,
+        -0.2251948,
+        -0.0895067,
+        -0.1543702,
+        -3.031168,
+    ),
+}
+
+
+def _prevent_cvd_10y(i: Mapping[str, Any]) -> float:
+    age = (i["age"] - 55) / 10
+    non_hdl = (i["total_cholesterol_mg_dl"] - i["hdl_mg_dl"]) * MG_DL_TO_MMOL_L - 3.5
+    hdl = (i["hdl_mg_dl"] * MG_DL_TO_MMOL_L - 1.3) / 0.3
+    sbp_high = (max(i["systolic_bp"], 110) - 130) / 20
+    egfr_low = (min(i["egfr"], 60) - 60) / -15
+    diabetes, smoker, treated, statin = (
+        float(i[name]) for name in ("diabetes", "current_smoker", "antihypertensive", "statin")
+    )
+    terms = (
+        age,
+        non_hdl,
+        hdl,
+        (min(i["systolic_bp"], 110) - 110) / 20,
+        sbp_high,
+        diabetes,
+        smoker,
+        egfr_low,
+        (max(i["egfr"], 60) - 90) / -15,
+        treated,
+        statin,
+        treated * sbp_high,
+        statin * non_hdl,
+        age * non_hdl,
+        age * hdl,
+        age * sbp_high,
+        age * diabetes,
+        age * smoker,
+        age * egfr_low,
+        1.0,
+    )
+    log_odds = sum(
+        beta * term for beta, term in zip(PREVENT_TOTAL_CVD[i["sex"]], terms, strict=True)
+    )
+    return 100 / (1 + math.exp(-log_odds))
+
+
+_register(
+    ClinicalScore(
+        id="prevent_cvd_10y",
+        name="PREVENT 10-year total cardiovascular disease risk",
+        description=(
+            "Sex-specific, race-free base equation for 10-year risk of total cardiovascular "
+            "disease, using eGFR from the CKD-EPI 2021 equation."
+        ),
+        citation=(
+            "Khan SS, et al. Development and validation of the American Heart Association's "
+            "PREVENT equations. Circulation. 2024;149:430-449. "
+            "doi:10.1161/CIRCULATIONAHA.123.067626. Coefficients and input ranges: "
+            "Supplemental Table S12A, simplified base model."
+        ),
+        fields=(
+            ScoreField(
+                "age", "integer", "Age in completed years", unit="a", minimum=30, maximum=79
+            ),
+            SEX,
+            ScoreField(
+                "total_cholesterol_mg_dl",
+                "number",
+                "Total cholesterol",
+                unit="mg/dL",
+                minimum=130,
+                maximum=320,
+            ),
+            ScoreField(
+                "hdl_mg_dl", "number", "HDL cholesterol", unit="mg/dL", minimum=20, maximum=100
+            ),
+            ScoreField(
+                "systolic_bp",
+                "number",
+                "Systolic blood pressure",
+                unit="mm[Hg]",
+                minimum=90,
+                maximum=200,
+            ),
+            RISK_DIABETES,
+            CURRENT_SMOKER,
+            ScoreField(
+                "egfr",
+                "number",
+                "eGFR from the CKD-EPI 2021 creatinine equation",
+                unit="mL/min/{1.73_m2}",
+                minimum=15,
+                maximum=150,
+            ),
+            ANTIHYPERTENSIVE,
+            _flag("statin", "Current statin"),
+        ),
+        compute=_prevent_cvd_10y,
+        units="%",
+        code_system=SCORE_SYSTEM,
+        code="prevent_cvd_10y",
+        display="PREVENT 10-year total CVD risk",
+        tolerance=0.1,
+        precision=1,
+    )
+)
+
+PCE: dict[tuple[str, str], dict[str, float]] = {
+    ("female", "white"): {
+        "ln_age": -29.799,
+        "ln_age_squared": 4.884,
+        "ln_tc": 13.540,
+        "ln_age_ln_tc": -3.114,
+        "ln_hdl": -13.578,
+        "ln_age_ln_hdl": 3.149,
+        "ln_treated_sbp": 2.019,
+        "ln_untreated_sbp": 1.957,
+        "smoker": 7.574,
+        "ln_age_smoker": -1.665,
+        "diabetes": 0.661,
+        "mean": -29.18,
+        "baseline": 0.9665,
+    },
+    ("female", "african_american"): {
+        "ln_age": 17.114,
+        "ln_tc": 0.940,
+        "ln_hdl": -18.920,
+        "ln_age_ln_hdl": 4.475,
+        "ln_treated_sbp": 29.291,
+        "ln_age_ln_treated_sbp": -6.432,
+        "ln_untreated_sbp": 27.820,
+        "ln_age_ln_untreated_sbp": -6.087,
+        "smoker": 0.691,
+        "diabetes": 0.874,
+        "mean": 86.61,
+        "baseline": 0.9533,
+    },
+    ("male", "white"): {
+        "ln_age": 12.344,
+        "ln_tc": 11.853,
+        "ln_age_ln_tc": -2.664,
+        "ln_hdl": -7.990,
+        "ln_age_ln_hdl": 1.769,
+        "ln_treated_sbp": 1.797,
+        "ln_untreated_sbp": 1.764,
+        "smoker": 7.837,
+        "ln_age_smoker": -1.795,
+        "diabetes": 0.658,
+        "mean": 61.18,
+        "baseline": 0.9144,
+    },
+    ("male", "african_american"): {
+        "ln_age": 2.469,
+        "ln_tc": 0.302,
+        "ln_hdl": -0.307,
+        "ln_treated_sbp": 1.916,
+        "ln_untreated_sbp": 1.809,
+        "smoker": 0.549,
+        "diabetes": 0.645,
+        "mean": 19.54,
+        "baseline": 0.8954,
+    },
+}
+
+
+def _pooled_cohort(i: Mapping[str, Any]) -> float:
+    coefficients = PCE[(i["sex"], i["race"])]
+    ln_age = math.log(i["age"])
+    ln_tc = math.log(i["total_cholesterol_mg_dl"])
+    ln_hdl = math.log(i["hdl_mg_dl"])
+    ln_sbp = math.log(i["systolic_bp"])
+    treatment = "treated" if i["antihypertensive"] else "untreated"
+    smoker = float(i["current_smoker"])
+    terms = {
+        "ln_age": ln_age,
+        "ln_age_squared": ln_age**2,
+        "ln_tc": ln_tc,
+        "ln_age_ln_tc": ln_age * ln_tc,
+        "ln_hdl": ln_hdl,
+        "ln_age_ln_hdl": ln_age * ln_hdl,
+        f"ln_{treatment}_sbp": ln_sbp,
+        f"ln_age_ln_{treatment}_sbp": ln_age * ln_sbp,
+        "smoker": smoker,
+        "ln_age_smoker": ln_age * smoker,
+        "diabetes": float(i["diabetes"]),
+    }
+    total = sum(coefficients.get(name, 0.0) * value for name, value in terms.items())
+    return float(100 * (1 - coefficients["baseline"] ** math.exp(total - coefficients["mean"])))
+
+
+def _ascvd_band(value: float, _: Mapping[str, Any]) -> str:
+    if value < 5:
+        return "low"
+    if value < 7.5:
+        return "borderline"
+    if value < 20:
+        return "intermediate"
+    return "high"
+
+
+_register(
+    ClinicalScore(
+        id="ascvd_pce_10y",
+        name="Pooled Cohort Equations 10-year ASCVD risk",
+        description=(
+            "Sex- and race-specific 10-year risk of a first hard atherosclerotic "
+            "cardiovascular event, with the 2019 primary prevention risk categories."
+        ),
+        citation=(
+            "Goff DC Jr, et al. 2013 ACC/AHA guideline on the assessment of cardiovascular "
+            "risk. Circulation. 2014;129(25 Suppl 2):S49-S73. "
+            "doi:10.1161/01.cir.0000437741.48606.98. Coefficients: Table A. Categories: "
+            "Arnett DK, et al. 2019 ACC/AHA guideline on the primary prevention of "
+            "cardiovascular disease. Circulation. 2019;140:e596-e646. "
+            "doi:10.1161/CIR.0000000000000678."
+        ),
+        fields=(
+            ScoreField(
+                "age", "integer", "Age in completed years", unit="a", minimum=40, maximum=79
+            ),
+            SEX,
+            ScoreField(
+                "race",
+                "enum",
+                "Race group that selects the published equation",
+                allowed=("white", "african_american"),
+            ),
+            TOTAL_CHOLESTEROL,
+            HDL_CHOLESTEROL,
+            SYSTOLIC,
+            ANTIHYPERTENSIVE,
+            RISK_DIABETES,
+            CURRENT_SMOKER,
+        ),
+        compute=_pooled_cohort,
+        units="%",
+        code_system=LOINC_SYSTEM,
+        code="79423-0",
+        display="Cardiovascular disease 10Y risk [Likelihood] ACC-AHA Pooled Cohort by Goff 2013",
+        tolerance=0.1,
+        precision=1,
+        band=_ascvd_band,
+    )
+)
+
+
+@dataclass(frozen=True)
+class _FraminghamModel:
+    age: float
+    age_squared: float
+    cholesterol: tuple[float, ...]
+    hdl: tuple[float, ...]
+    blood_pressure: tuple[float, ...]
+    diabetes: float
+    smoker: float
+    mean: float
+    baseline: float
+
+
+FRAMINGHAM_CHD = {
+    "male": _FraminghamModel(
+        age=0.04826,
+        age_squared=0,
+        cholesterol=(-0.65945, 0, 0.17692, 0.50539, 0.65713),
+        hdl=(0.49744, 0.24310, 0, -0.05107, -0.48660),
+        blood_pressure=(-0.00226, 0, 0.28320, 0.52168, 0.61859),
+        diabetes=0.42839,
+        smoker=0.52337,
+        mean=3.0975,
+        baseline=0.90015,
+    ),
+    "female": _FraminghamModel(
+        age=0.33766,
+        age_squared=-0.00268,
+        cholesterol=(-0.26138, 0, 0.20771, 0.24385, 0.53513),
+        hdl=(0.84312, 0.37796, 0.19785, 0, -0.42951),
+        blood_pressure=(-0.53363, 0, -0.06773, 0.26288, 0.46573),
+        diabetes=0.59626,
+        smoker=0.29246,
+        mean=9.92545,
+        baseline=0.96246,
+    ),
+}
+
+
+def _framingham_chd(i: Mapping[str, Any]) -> float:
+    model = FRAMINGHAM_CHD[i["sex"]]
+    # JNC-V stages: when systolic and diastolic fall in different stages, the higher applies.
+    stage = max(
+        bisect.bisect_right((120, 130, 140, 160), i["systolic_bp"]),
+        bisect.bisect_right((80, 85, 90, 100), i["diastolic_bp"]),
+    )
+    linear = (
+        model.age * i["age"]
+        + model.age_squared * i["age"] ** 2
+        + model.cholesterol[bisect.bisect_right((160, 200, 240, 280), i["total_cholesterol_mg_dl"])]
+        + model.hdl[bisect.bisect_right((35, 45, 50, 60), i["hdl_mg_dl"])]
+        + model.blood_pressure[stage]
+        + model.diabetes * float(i["diabetes"])
+        + model.smoker * float(i["current_smoker"])
+    )
+    return float(100 * (1 - model.baseline ** math.exp(linear - model.mean)))
+
+
+_register(
+    ClinicalScore(
+        id="framingham_chd_10y",
+        name="Framingham 10-year coronary heart disease risk",
+        description=(
+            "10-year coronary heart disease risk from age, total and HDL cholesterol "
+            "categories, JNC-V blood pressure stage, diabetes and smoking."
+        ),
+        citation=(
+            "Wilson PWF, et al. Prediction of coronary heart disease using risk factor "
+            "categories. Circulation. 1998;97:1837-1847. doi:10.1161/01.CIR.97.18.1837. "
+            "Coefficients: Table 6, total cholesterol categories."
+        ),
+        fields=(
+            ScoreField(
+                "age", "integer", "Age in completed years", unit="a", minimum=30, maximum=74
+            ),
+            SEX,
+            TOTAL_CHOLESTEROL,
+            HDL_CHOLESTEROL,
+            SYSTOLIC,
+            DIASTOLIC,
+            RISK_DIABETES,
+            CURRENT_SMOKER,
+        ),
+        compute=_framingham_chd,
+        units="%",
+        code_system=LOINC_SYSTEM,
+        code="65851-8",
+        display="Coronary heart disease 10Y risk [#] Framingham.Wilson 1998",
+        tolerance=0.1,
+        precision=1,
     )
 )
 

@@ -7,6 +7,7 @@ from typing import Any
 from charcot_gym.env import ToolCall
 from charcot_gym.scores import BAND_SYSTEM, SCORES
 from charcot_gym.task import Task
+from charcot_gym.verifier.clinical_scores import UNAVAILABLE
 
 
 def oracle_turns(task: Task) -> list[list[ToolCall]]:
@@ -297,8 +298,9 @@ def _observation_correction(task: Task) -> list[ToolCall]:
 
 def oracle_answer(task: Task) -> dict[str, Any]:
     """Return the reference final answer for a task."""
-    missing = task.gold.get("missing_inputs") if task.family == "clinical_scores" else None
-    return {"missing_inputs": missing} if missing else {}
+    if task.family != "clinical_scores":
+        return {}
+    return {kind: task.gold[kind] for kind in UNAVAILABLE if task.gold.get(kind)}
 
 
 def _clinical_scores(task: Task) -> list[list[ToolCall]]:
@@ -307,9 +309,12 @@ def _clinical_scores(task: Task) -> list[list[ToolCall]]:
     encounter = {"reference": f"Encounter/{gold['encounter_id']}"}
     responses: list[ToolCall] = []
     observations: list[ToolCall] = []
+    recorded: dict[str, str] = {}
     for item in gold["scores"]:
         score = SCORES[item["score"]]
         derived = list(item["derived_from"])
+        derived += [recorded[dependency] for dependency in item.get("derived_from_scores", [])]
+        recorded[score.id] = f"Observation/observation-{task.seed}-{len(observations) + 1}"
         if score.questionnaire:
             responses.append(
                 ToolCall(

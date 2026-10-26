@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from importlib.resources import files
 from typing import Any
 
-from charcot_gym.scores import SCORES, calculate
+from charcot_gym.scores import MG_DL_TO_MMOL_L, SCORES, calculate
 from charcot_gym.synth.longitudinal import generate_longitudinal_record
 
 UCUM_SYSTEM = "http://unitsofmeasure.org"
@@ -22,6 +22,8 @@ CREATININE_UMOL_PER_MG_DL = 88.4
 BUN_MG_DL_PER_UREA_MMOL_L = 2.8
 TOOLS = ["fhir_search", "fhir_read", "fhir_create", "clinical_score"]
 CHART_UNITS: dict[str, frozenset[str]] = {
+    "14646-4": frozenset({"mmol/L"}),
+    "14647-2": frozenset({"mmol/L"}),
     "14682-9": frozenset({"umol/L"}),
     "1742-6": frozenset({"U/L"}),
     "1751-7": frozenset({"g/L"}),
@@ -62,6 +64,14 @@ DISPLAYS = {
     "17861-6": "Calcium [Mass/volume] in Serum or Plasma",
     "1751-7": "Albumin [Mass/volume] in Serum or Plasma",
     "2345-7": "Glucose [Mass/volume] in Serum or Plasma",
+    "14647-2": "Cholesterol [Moles/volume] in Serum or Plasma",
+    "14646-4": "Cholesterol in HDL [Moles/volume] in Serum or Plasma",
+}
+AGE_RANGES = {"cardiorenal": (45, 79), "lipid_risk": (45, 74)}
+SMOKING = {
+    "current": "current smoker, 10 cigarettes per day",
+    "former": "former smoker, quit 8 years ago",
+    "never": "never smoker",
 }
 PROMPT = """Clinical score SOP.
 Patient: Patient/{patient_id}. Current encounter: Encounter/{encounter_id} on {visit_date}.
@@ -80,8 +90,14 @@ Scores requested: {scores}.
 5. For questionnaire scores, first create a QuestionnaireResponse (status completed,
    questionnaire from the spec, subject, authored {visit_date}, one item per field with linkId
    equal to the field name and an answer valueInteger) and include it in derivedFrom.
-6. If a required input is not documented on {visit_date}, do not create that score. Submit
-   {{"missing_inputs": {{"<score>": ["<field>", ...]}}}}. Otherwise submit an empty answer."""
+6. If a required input is not documented on {visit_date}, do not create that score and list the
+   field under missing_inputs.
+7. If a documented input is outside the range the spec allows, do not create that score, do not
+   clamp or replace the value, and list the field under invalid_inputs.
+8. When one requested score is a field of another (for example eGFR in PREVENT), use the value
+   you recorded and add that score's Observation to derivedFrom.
+9. Submit {{"missing_inputs": {{"<score>": ["<field>", ...]}}, "invalid_inputs": {{...}}}} with
+   only the keys that apply, or an empty answer when every score was recorded."""
 
 
 class _Chart:
@@ -94,6 +110,8 @@ class _Chart:
         self.resources: list[dict[str, Any]] = []
         self.facts: dict[str, Any] = {}
         self.counts: dict[str, int] = {}
+        self.invalid: dict[str, list[str]] = {}
+        self.chained: dict[str, list[str]] = {}
 
     def _id(self, prefix: str) -> str:
         self.counts[prefix] = self.counts.get(prefix, 0) + 1
@@ -227,18 +245,104 @@ def _anthropometrics(chart: _Chart) -> Scenario:
     return {"bmi": refs, "bsa_mosteller": refs}, [stale], {}, {}, ["unit_mismatch", "stale_value"]
 
 
-def _renal_dosing(chart: _Chart) -> Scenario:
+def _away_from(rng: random.Random, low: int, high: int, cutoffs: tuple[int, ...]) -> int:
+    # Keeps converted values clear of category cutoffs so rounding never changes a category.
+    while True:
+        value = rng.randint(low, high)
+        if all(abs(value - cutoff) >= 3 for cutoff in cutoffs):
+            return value
+
+
+def _lipids(chart: _Chart) -> tuple[list[str], dict[str, float]]:
+    total = round(_away_from(chart.rng, 150, 290, (160, 200, 240, 280)) * MG_DL_TO_MMOL_L, 2)
+    hdl = round(_away_from(chart.rng, 30, 90, (35, 45, 50, 60)) * MG_DL_TO_MMOL_L, 2)
+    refs = [
+        chart.observation("14647-2", total, "mmol/L"),
+        chart.observation("14646-4", hdl, "mmol/L"),
+    ]
+    facts = {
+        "total_cholesterol_mg_dl": round(total / MG_DL_TO_MMOL_L, 1),
+        "hdl_mg_dl": round(hdl / MG_DL_TO_MMOL_L, 1),
+    }
+    return refs, facts
+
+
+def _risk_history(chart: _Chart, *, race: bool) -> tuple[str, dict[str, Any]]:
     rng = chart.rng
-    umol = rng.randint(62, 260)
+    diabetes = rng.random() < 0.4
+    if diabetes:
+        chart.condition("E11.9", "Type 2 diabetes mellitus without complications")
+    smoking = rng.choice(tuple(SMOKING))
+    treated = rng.random() < 0.6
+    statin = rng.random() < 0.5
+    if treated:
+        chart.medication("amlodipine 5 mg oral tablet, once daily")
+    if statin:
+        chart.medication("atorvastatin 20 mg oral tablet, once daily")
+    lines = [f"Tobacco: {SMOKING[smoking]}."]
+    facts: dict[str, Any] = {
+        "diabetes": diabetes,
+        "current_smoker": smoking == "current",
+        "antihypertensive": treated,
+        "statin": statin,
+    }
+    if race:
+        facts["race"] = rng.choice(("white", "african_american"))
+        label = "White" if facts["race"] == "white" else "Black or African American"
+        lines.append(f"Self-reported race: {label}.")
+    return chart.note("Preventive Cardiology Visit", lines), facts
+
+
+def _cardiorenal(chart: _Chart) -> Scenario:
+    rng = chart.rng
+    umol = rng.randint(62, 200)
     kg = round(rng.uniform(50, 110), 1)
     creatinine = chart.observation("14682-9", umol, "umol/L")
     weight = chart.observation("29463-7", kg, "kg")
-    chart.facts |= {
-        "creatinine_mg_dl": round(umol / CREATININE_UMOL_PER_MG_DL, 4),
-        "weight_kg": kg,
+    lipids, lipid_facts = _lipids(chart)
+    systolic_value = rng.randint(104, 178)
+    systolic = chart.observation("8480-6", systolic_value, "mm[Hg]")
+    chart.observation("8462-4", rng.randint(62, 94), "mm[Hg]")
+    note, history = _risk_history(chart, race=False)
+    creatinine_mg_dl = round(umol / CREATININE_UMOL_PER_MG_DL, 4)
+    egfr = calculate("egfr_ckd_epi_2021", {**_ages(chart), "creatinine_mg_dl": creatinine_mg_dl})
+    chart.facts |= {"creatinine_mg_dl": creatinine_mg_dl, "weight_kg": kg}
+    chart.facts["prevent_cvd_10y"] = (
+        lipid_facts
+        | history
+        | {
+            "systolic_bp": systolic_value,
+            "egfr": egfr["value"],
+        }
+    )
+    chart.chained["prevent_cvd_10y"] = ["egfr_ckd_epi_2021"]
+    required = {
+        "egfr_ckd_epi_2021": [creatinine],
+        "prevent_cvd_10y": [*lipids, systolic, note],
+        "crcl_cockcroft_gault": [creatinine, weight],
     }
-    required = {"egfr_ckd_epi_2021": [creatinine], "crcl_cockcroft_gault": [creatinine, weight]}
-    return required, chart.background_refs("2160-0"), {}, {}, ["unit_mismatch", "stale_value"]
+    stale = chart.background_refs("2160-0", "2093-3", "2085-9")
+    return required, stale, {}, {}, ["chained_score", "unit_mismatch", "stale_value"]
+
+
+def _lipid_risk(chart: _Chart) -> Scenario:
+    rng = chart.rng
+    lipids, lipid_facts = _lipids(chart)
+    systolic_value = rng.randint(202, 218)
+    diastolic_value = rng.randint(96, 112)
+    systolic = chart.observation("8480-6", systolic_value, "mm[Hg]")
+    diastolic = chart.observation("8462-4", diastolic_value, "mm[Hg]")
+    chart.observation("2160-0", round(rng.uniform(0.7, 1.4), 2), "mg/dL")
+    note, history = _risk_history(chart, race=True)
+    chart.facts |= lipid_facts | history
+    chart.facts |= {"systolic_bp": systolic_value, "diastolic_bp": diastolic_value}
+    chart.invalid["prevent_cvd_10y"] = ["systolic_bp"]
+    required = {
+        "ascvd_pce_10y": [*lipids, systolic, note],
+        "framingham_chd_10y": [*lipids, systolic, diastolic, note],
+    }
+    stale = chart.background_refs("2093-3", "2085-9")
+    return required, stale, {}, {}, ["unit_mismatch", "out_of_range", "stale_value"]
 
 
 def _pe_workup(chart: _Chart) -> Scenario:
@@ -433,7 +537,7 @@ def _liver_panel(chart: _Chart) -> Scenario:
     return required, stale, {"meld_na": ["inr"]}, {}, ["missing_input", "stale_value"]
 
 
-def _respiratory(chart: _Chart, *, rate_documented: bool) -> Scenario:
+def _pneumonia(chart: _Chart) -> Scenario:
     rng = chart.rng
     rate_value = rng.randint(16, 34)
     systolic_value = rng.randint(84, 138)
@@ -450,8 +554,7 @@ def _respiratory(chart: _Chart, *, rate_documented: bool) -> Scenario:
         chart.observation("8480-6", rng.randint(110, 140), "mm[Hg]", days_ago=370),
         *chart.background_refs("3094-0"),
     ]
-    if rate_documented:
-        refs.append(chart.observation("9279-1", rate_value, "/min"))
+    refs.append(chart.observation("9279-1", rate_value, "/min"))
     mental = "new confusion" if confusion else "alert and oriented, no new confusion"
     note = chart.note(
         "Acute Respiratory Visit", ["Cough and fever for 3 days.", f"Mental status: {mental}."]
@@ -463,9 +566,6 @@ def _respiratory(chart: _Chart, *, rate_documented: bool) -> Scenario:
         "confusion": confusion,
         "altered_mentation": confusion,
     }
-    if not rate_documented:
-        missing = {"curb_65": ["respiratory_rate"], "qsofa": ["respiratory_rate"]}
-        return {}, stale, missing, {}, ["missing_input", "stale_value"]
     chart.facts["respiratory_rate"] = rate_value
     systolic, diastolic, bun, rate = refs
     required = {
@@ -503,17 +603,21 @@ def _electrolytes(chart: _Chart) -> Scenario:
 
 SCENARIOS: tuple[tuple[str, tuple[str, ...], Callable[[_Chart], Scenario]], ...] = (
     ("anthropometrics", ("bmi", "bsa_mosteller"), _anthropometrics),
-    ("renal_dosing", ("egfr_ckd_epi_2021", "crcl_cockcroft_gault"), _renal_dosing),
+    (
+        "cardiorenal",
+        ("egfr_ckd_epi_2021", "prevent_cvd_10y", "crcl_cockcroft_gault"),
+        _cardiorenal,
+    ),
     ("pe_workup", ("revised_geneva",), _pe_workup),
     ("af_risk", ("cha2ds2_vasc", "has_bled"), _af_risk),
     ("mood_screen", ("phq_9", "gad_7"), _mood_screen),
     ("alcohol_screen", ("audit_c",), _alcohol_screen),
     ("liver_panel", ("fib_4", "apri", "meld_na"), _liver_panel),
-    ("pneumonia", ("curb_65", "qsofa"), lambda chart: _respiratory(chart, rate_documented=True)),
+    ("pneumonia", ("curb_65", "qsofa"), _pneumonia),
     (
-        "sepsis_screen",
-        ("qsofa", "curb_65"),
-        lambda chart: _respiratory(chart, rate_documented=False),
+        "lipid_risk",
+        ("ascvd_pce_10y", "framingham_chd_10y", "prevent_cvd_10y"),
+        _lipid_risk,
     ),
     (
         "electrolytes",
@@ -563,7 +667,7 @@ def _task(
     visit = date(2025, 1, 6) + timedelta(days=rng.randint(0, 300))
     chart = _Chart(rng, f"{split}-{index:03d}", visit)
     sex = rng.choice(("female", "male"))
-    age = rng.randint(45, 86)
+    age = rng.randint(*AGE_RANGES.get(name, (45, 86)))
     birth = date(visit.year - age - 1, 1, 1) + timedelta(
         days=rng.randint(visit.timetuple().tm_yday, 364)
     )
@@ -597,7 +701,7 @@ def _task(
     required, forbidden, missing, note_values, traps = build(chart)
     gold_scores = []
     for score_id in scores:
-        if score_id in missing:
+        if score_id in missing or score_id in chart.invalid:
             continue
         nested = chart.facts.get(score_id)
         facts = {**chart.facts, **nested} if isinstance(nested, dict) else chart.facts
@@ -611,6 +715,7 @@ def _task(
                 "band": result["band"],
                 "derived_from": sorted(required[score_id]),
                 "forbidden_derived_from": sorted(forbidden),
+                "derived_from_scores": chart.chained.get(score_id, []),
             }
         )
     return {
@@ -638,6 +743,7 @@ def _task(
             "preexisting_ids": [resource["id"] for resource in chart.resources],
             "scores": gold_scores,
             "missing_inputs": missing,
+            "invalid_inputs": chart.invalid,
             "note_values": note_values,
         },
         "verifier": "clinical_scores",
