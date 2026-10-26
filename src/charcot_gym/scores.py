@@ -26,6 +26,8 @@ class ScoreField:
     allowed: tuple[Any, ...] | None = None
     minimum: float | None = None
     maximum: float | None = None
+    precision: int | None = None
+    conversions: tuple[tuple[str, float], ...] = ()
 
     def spec(self) -> dict[str, Any]:
         """Return the public field description."""
@@ -41,6 +43,12 @@ class ScoreField:
             data["minimum"] = self.minimum
         if self.maximum is not None:
             data["maximum"] = self.maximum
+        if self.precision is not None:
+            data["precision"] = self.precision
+        if self.conversions:
+            data["conversions"] = [
+                {"from_unit": unit, "factor": factor} for unit, factor in self.conversions
+            ]
         return data
 
 
@@ -107,8 +115,24 @@ class ScoreInputError(ValueError):
         }
 
 
-def _number(name: str, unit: str, description: str, minimum: float = 0) -> ScoreField:
-    return ScoreField(name, "number", description, unit=unit, minimum=minimum)
+def _number(  # noqa: PLR0913
+    name: str,
+    unit: str,
+    description: str,
+    minimum: float = 0,
+    *,
+    precision: int | None = None,
+    conversions: tuple[tuple[str, float], ...] = (),
+) -> ScoreField:
+    return ScoreField(
+        name,
+        "number",
+        description,
+        unit=unit,
+        minimum=minimum,
+        precision=precision,
+        conversions=conversions,
+    )
 
 
 def _flag(name: str, description: str) -> ScoreField:
@@ -129,16 +153,28 @@ def _items(prefix: str, count: int, maximum: int, description: str) -> tuple[Sco
 
 AGE = ScoreField("age", "integer", "Age in completed years", unit="a", minimum=0, maximum=130)
 SEX = ScoreField("sex", "enum", "Administrative sex", allowed=("female", "male"))
-WEIGHT = _number("weight_kg", "kg", "Body weight")
-HEIGHT = _number("height_cm", "cm", "Body height")
-CREATININE = _number("creatinine_mg_dl", "mg/dL", "Serum creatinine")
+LB_TO_KG = 0.45359237
+CREATININE_UMOL_PER_MG_DL = 88.4
+BUN_MG_DL_PER_UREA_MMOL_L = 2.8
+MG_DL_TO_MMOL_L = 0.02586
+WEIGHT = _number("weight_kg", "kg", "Body weight", conversions=(("[lb_av]", LB_TO_KG),))
+HEIGHT = _number("height_cm", "cm", "Body height", conversions=(("[in_i]", 2.54),))
+CREATININE = _number(
+    "creatinine_mg_dl",
+    "mg/dL",
+    "Serum creatinine",
+    precision=2,
+    conversions=(("umol/L", 1 / CREATININE_UMOL_PER_MG_DL),),
+)
 HEART_RATE = _number("heart_rate", "/min", "Heart rate")
 RESPIRATORY_RATE = _number("respiratory_rate", "/min", "Respiratory rate")
 SYSTOLIC = _number("systolic_bp", "mm[Hg]", "Systolic blood pressure")
 DIASTOLIC = _number("diastolic_bp", "mm[Hg]", "Diastolic blood pressure")
 AST = _number("ast", "U/L", "Aspartate aminotransferase")
 ALT = _number("alt", "U/L", "Alanine aminotransferase")
-PLATELETS = _number("platelets", "10*9/L", "Platelet count")
+PLATELETS = _number(
+    "platelets", "10*9/L", "Platelet count", precision=0, conversions=(("10*3/uL", 1.0),)
+)
 SODIUM = _number("sodium", "mmol/L", "Serum sodium")
 
 
@@ -489,7 +525,7 @@ _register(
         precision=1,
     )
 )
-ALBUMIN = _number("albumin_g_dl", "g/dL", "Serum albumin")
+ALBUMIN = _number("albumin_g_dl", "g/dL", "Serum albumin", conversions=(("g/L", 0.1),))
 _register(
     ClinicalScore(
         id="corrected_calcium",
@@ -853,7 +889,12 @@ _register(
         ),
         fields=(
             _flag("confusion", "New mental confusion"),
-            _number("urea_mmol_l", "mmol/L", "Serum urea"),
+            _number(
+                "urea_mmol_l",
+                "mmol/L",
+                "Serum urea; urea nitrogen in mg/dL converts with the factor",
+                conversions=(("mg/dL", 1 / BUN_MG_DL_PER_UREA_MMOL_L),),
+            ),
             RESPIRATORY_RATE,
             SYSTOLIC,
             DIASTOLIC,
@@ -1164,9 +1205,13 @@ _register(
 )
 
 
-MG_DL_TO_MMOL_L = 0.02586
-TOTAL_CHOLESTEROL = _number("total_cholesterol_mg_dl", "mg/dL", "Total cholesterol")
-HDL_CHOLESTEROL = _number("hdl_mg_dl", "mg/dL", "HDL cholesterol")
+CHOLESTEROL_CONVERSIONS = (("mmol/L", 1 / MG_DL_TO_MMOL_L),)
+TOTAL_CHOLESTEROL = _number(
+    "total_cholesterol_mg_dl", "mg/dL", "Total cholesterol", conversions=CHOLESTEROL_CONVERSIONS
+)
+HDL_CHOLESTEROL = _number(
+    "hdl_mg_dl", "mg/dL", "HDL cholesterol", conversions=CHOLESTEROL_CONVERSIONS
+)
 RISK_DIABETES = _flag("diabetes", "Diabetes mellitus")
 CURRENT_SMOKER = _flag("current_smoker", "Current cigarette smoking")
 ANTIHYPERTENSIVE = _flag("antihypertensive", "Current antihypertensive medication")
@@ -1286,9 +1331,16 @@ _register(
                 unit="mg/dL",
                 minimum=130,
                 maximum=320,
+                conversions=CHOLESTEROL_CONVERSIONS,
             ),
             ScoreField(
-                "hdl_mg_dl", "number", "HDL cholesterol", unit="mg/dL", minimum=20, maximum=100
+                "hdl_mg_dl",
+                "number",
+                "HDL cholesterol",
+                unit="mg/dL",
+                minimum=20,
+                maximum=100,
+                conversions=CHOLESTEROL_CONVERSIONS,
             ),
             ScoreField(
                 "systolic_bp",
