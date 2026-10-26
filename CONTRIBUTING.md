@@ -48,3 +48,15 @@ uv run python scripts/maintenance.py bands --results runs/ --model <model> --mod
 This writes `src/charcot_gym/tasks/bands.json` and the `band` field of each task.
 `maintenance.py dedup` reports the share of tasks per split that share a
 skeleton (family, scenario, traps, source format and level, target resources).
+
+## Hugging Face dataset
+
+Build the public Parquet dataset locally, then push a private Hub dataset with
+`HF_TOKEN` set. Add `--public` to create a public dataset. Verify a published
+revision with:
+
+```sh
+uv run python scripts/hf_datasets.py build --out dist/hf-dataset
+uv run python scripts/hf_datasets.py push --repo charcot-ai/gym
+uv run python scripts/hf_datasets.py verify --repo charcot-ai/gym --revision v0.1.0
+```
