@@ -9,6 +9,7 @@ from importlib.resources import files
 from typing import Any
 
 from charcot_gym.fhir_store import FHIRStore
+from charcot_gym.scores import SCORES, ScoreInputError, calculate, score_spec
 from charcot_gym.task import Task
 from charcot_gym.terminology import terminology_search
 
@@ -318,6 +319,16 @@ def _portal_claim_status(environment: Mapping[str, Any], arguments: Mapping[str,
     return _portal_value(environment, "claim_status", claim_id)
 
 
+def _clinical_score(_store: FHIRStore, arguments: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        if arguments["operation"] == "spec":
+            return score_spec(str(arguments["score"]))
+        return calculate(str(arguments["score"]), arguments.get("inputs", {}))
+    except ScoreInputError as error:
+        # Input errors are answers the agent must act on, not invalid tool calls.
+        return {"error": error.to_dict()}
+
+
 def _context_only(_store: FHIRStore, _arguments: Mapping[str, Any]) -> Any:
     raise ValueError("tool requires task environment data")
 
@@ -556,6 +567,27 @@ CORE_TOOLS.register(
             "additionalProperties": False,
         },
         handler=_healthplan_rules,
+    )
+)
+CORE_TOOLS.register(
+    ToolSpec(
+        name="clinical_score",
+        description=(
+            "Deterministic clinical score calculator. operation=spec returns the score fields "
+            "with types, units and allowed values; operation=calculate validates inputs in "
+            "those units and returns value, band and units. Missing fields are never assumed."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "operation": {"type": "string", "enum": ["spec", "calculate"]},
+                "score": {"type": "string", "description": "One of: " + ", ".join(sorted(SCORES))},
+                "inputs": {"type": "object"},
+            },
+            "required": ["operation", "score"],
+            "additionalProperties": False,
+        },
+        handler=_clinical_score,
     )
 )
 

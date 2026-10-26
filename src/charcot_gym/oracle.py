@@ -5,13 +5,17 @@ from __future__ import annotations
 from typing import Any
 
 from charcot_gym.env import ToolCall
+from charcot_gym.scores import BAND_SYSTEM, SCORES
 from charcot_gym.task import Task
+from charcot_gym.verifier.clinical_scores import UNAVAILABLE
 
 
 def oracle_turns(task: Task) -> list[list[ToolCall]]:
     """Build reference actions grouped into assistant turns."""
     if task.modality != "text":
         raise ValueError("oracle turns support text tasks only")
+    if task.family == "clinical_scores":
+        return _clinical_scores(task)
 
     if "source_access" in task.gold:
         access = task.gold["source_access"]
@@ -323,3 +327,95 @@ def _observation_correction(task: Task) -> list[ToolCall]:
             },
         )
     ]
+
+
+def oracle_answer(task: Task) -> dict[str, Any]:
+    """Return the reference final answer for a task."""
+    if task.family != "clinical_scores":
+        return {}
+    return {kind: task.gold[kind] for kind in UNAVAILABLE if task.gold.get(kind)}
+
+
+def _clinical_scores(task: Task) -> list[list[ToolCall]]:
+    gold = task.gold
+    subject = {"reference": f"Patient/{gold['patient_id']}"}
+    encounter = {"reference": f"Encounter/{gold['encounter_id']}"}
+    responses: list[ToolCall] = []
+    observations: list[ToolCall] = []
+    recorded: dict[str, str] = {}
+    for item in gold["scores"]:
+        score = SCORES[item["score"]]
+        derived = list(item["derived_from"])
+        derived += [recorded[dependency] for dependency in item.get("derived_from_scores", [])]
+        recorded[score.id] = f"Observation/observation-{task.seed}-{len(observations) + 1}"
+        if score.questionnaire:
+            responses.append(
+                ToolCall(
+                    name="fhir_create",
+                    arguments={
+                        "resource": {
+                            "resourceType": "QuestionnaireResponse",
+                            "status": "completed",
+                            "questionnaire": score.questionnaire,
+                            "subject": subject,
+                            "encounter": encounter,
+                            "authored": gold["visit_date"],
+                            "item": [
+                                {"linkId": name, "answer": [{"valueInteger": value}]}
+                                for name, value in item["inputs"].items()
+                            ],
+                        }
+                    },
+                )
+            )
+            # The store assigns ids from the episode seed and a per-type counter.
+            derived.append(
+                f"QuestionnaireResponse/questionnaireresponse-{task.seed}-{len(responses)}"
+            )
+        observation: dict[str, Any] = {
+            "resourceType": "Observation",
+            "status": "final",
+            "code": {
+                "coding": [
+                    {"system": score.code_system, "code": score.code, "display": score.display}
+                ]
+            },
+            "subject": subject,
+            "encounter": encounter,
+            "effectiveDateTime": gold["visit_date"],
+            "derivedFrom": [{"reference": reference} for reference in derived],
+        }
+        if score.integer:
+            observation["valueInteger"] = item["value"]
+        else:
+            unit = score.units or "{score}"
+            observation["valueQuantity"] = {
+                "value": item["value"],
+                "unit": unit,
+                "system": "http://unitsofmeasure.org",
+                "code": unit,
+            }
+        if item["band"] is not None:
+            observation["interpretation"] = [
+                {"coding": [{"system": BAND_SYSTEM, "code": item["band"]}], "text": item["band"]}
+            ]
+        observations.append(ToolCall(name="fhir_create", arguments={"resource": observation}))
+    calculations = [
+        ToolCall(
+            name="clinical_score",
+            arguments={"operation": "calculate", "score": item["score"], "inputs": item["inputs"]},
+        )
+        for item in gold["scores"]
+    ]
+    turns = [
+        [
+            ToolCall(
+                name="fhir_search",
+                arguments={
+                    "resource_type": "Observation",
+                    "params": {"subject": subject["reference"]},
+                },
+            )
+        ]
+    ]
+    return [turn for turn in (*turns, calculations, responses, observations) if turn]
