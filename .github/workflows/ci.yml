@@ -21,6 +21,7 @@ jobs:
       - run: uv run python scripts/maintenance.py check
       - run: uv run python scripts/maintenance.py tasks --check
       - run: uv run python scripts/maintenance.py report --check
+      - run: uv run python scripts/maintenance.py bands --check
       - run: uv build
       - name: Check package contents
         run: |
