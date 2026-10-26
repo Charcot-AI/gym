@@ -40,6 +40,7 @@ def test_report_checks_readme_task_table(tmp_path, monkeypatch):
         "_quality_report_artifacts",
         lambda: ("# Quality report\n", task_table),
     )
+    monkeypatch.setattr(maintenance, "render_card", lambda *args, **kwargs: "# Dataset card\n")
     (tmp_path / "README.md").write_text(
         "## Task coverage\n\n<!-- tasks:start -->\nstale table\n<!-- tasks:end -->\n",
         encoding="utf-8",
@@ -48,7 +49,13 @@ def test_report_checks_readme_task_table(tmp_path, monkeypatch):
     assert maintenance.quality_report() == 0
     readme = (tmp_path / "README.md").read_text(encoding="utf-8")
     assert f"<!-- tasks:start -->\n{task_table}\n<!-- tasks:end -->" in readme
+    card_path = tmp_path / "docs" / "datasets" / "gym" / "README.md"
+    assert card_path.read_text(encoding="utf-8") == "# Dataset card\n"
     assert maintenance.quality_report(check=True) == 0
 
     (tmp_path / "README.md").write_text(readme.replace(task_table, "stale table"), encoding="utf-8")
+    assert maintenance.quality_report(check=True) == 1
+
+    (tmp_path / "README.md").write_text(readme, encoding="utf-8")
+    card_path.write_text("stale card\n", encoding="utf-8")
     assert maintenance.quality_report(check=True) == 1
