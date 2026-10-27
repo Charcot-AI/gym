@@ -314,6 +314,7 @@ def _convert_task(  # noqa: PLR0913, PLR0917
     )
     preexisting = list(source["gold"]["preexisting_ids"])
     task["family"] = "claims"
+    task.pop("source_level", None)
     task["id"] = task_id
     task["verifier"] = "claims"
     task["tools"] = list(dict.fromkeys([*task["tools"], "healthplan_rules"]))

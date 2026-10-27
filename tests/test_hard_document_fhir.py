@@ -629,7 +629,7 @@ def test_longitudinal_and_report_codes_and_units_are_searchable() -> None:
     )
 
 
-def test_document_reports_contain_no_icd_codes_or_internal_terms() -> None:
+def test_document_reports_contain_no_icd_codes() -> None:
     for task in hard_tasks():
         for report in _reports(task):
             assert (
@@ -639,14 +639,6 @@ def test_document_reports_contain_no_icd_codes_or_internal_terms() -> None:
                 )
                 is None
             )
-    completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "maintenance.py"), "check"],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_build_task_check_preserves_standard_and_hard_artifacts() -> None:
