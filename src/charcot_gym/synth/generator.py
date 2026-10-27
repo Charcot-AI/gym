@@ -462,6 +462,11 @@ def _generate_split(
             {
                 "id": f"{task_family.replace('_', '-')}-{split}-{index + 1:03d}",
                 "family": task_family,
+                **(
+                    {"source_level": "f1" if layout == "narrative" else "f0"}
+                    if task_family == "document_fhir"
+                    else {}
+                ),
                 "split": split,
                 "version": "1",
                 "prompt": prompt,

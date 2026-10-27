@@ -818,6 +818,7 @@ def _generate_task(  # noqa: PLR0913
             "preexisting_ids": all_ids,
         },
         "verifier": "document_fhir",
+        "source_level": "f3",
         "max_steps": 96,
         "seed": seed,
         "metadata": {
