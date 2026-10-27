@@ -15,7 +15,7 @@ import pytest
 
 from charcot_gym import cli, oracle_turns
 from charcot_gym.env import ClinicalEnv
-from charcot_gym.runner.client import ModelConfig, OpenAIChatClient
+from charcot_gym.runner.client import ChatCompletionError, ModelConfig, OpenAIChatClient
 from charcot_gym.runner.episode import _image_data_uri, run_episode
 from charcot_gym.runner.evaluation import evaluate
 from charcot_gym.runner.leaderboard import build_leaderboard
@@ -147,6 +147,40 @@ def test_scripted_oracle_runs_a_task_from_each_family_and_exports_all_tools() ->
             client=ScriptedClient(oracle_tool_calls(task)),
         )
         assert result.score is not None and result.score.value == 1.0
+
+
+@pytest.mark.parametrize(
+    ("json_body", "text_body", "expected_detail"),
+    [
+        ({"error": {"message": "server detail"}}, None, "server detail"),
+        ({"message": "top-level detail"}, None, "top-level detail"),
+        (None, "plain response body", "plain response body"),
+        (None, "x" * 501, "x" * 500),
+    ],
+)
+def test_http_errors_include_bounded_response_detail(
+    monkeypatch: Any,
+    json_body: dict[str, Any] | None,
+    text_body: str | None,
+    expected_detail: str,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        if json_body is not None:
+            return httpx.Response(400, json=json_body, request=request)
+        return httpx.Response(400, text=text_body, request=request)
+
+    client = OpenAIChatClient(
+        ModelConfig(model="fake", retries=0),
+        transport=httpx.MockTransport(respond),
+    )
+    with pytest.raises(ChatCompletionError) as error:
+        client.complete([], [])
+
+    assert error.value.kind == "http_error"
+    assert error.value.http_status == 400
+    assert str(error.value) == f"chat-completions HTTP 400: {expected_detail}"
 
 
 def test_noop_is_scored_zero_and_api_failure_is_errored() -> None:
