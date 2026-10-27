@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
 
 from charcot_gym import Task, load_tasks  # noqa: E402
 from charcot_gym.bands import assign_bands, pass_counts  # noqa: E402
-from charcot_gym.skeleton import MAX_DUPLICATE_RATE, duplicate_rate  # noqa: E402
+from charcot_gym.skeleton import MAX_DUPLICATE_RATE, dedup_findings, split_duplication  # noqa: E402
 from charcot_gym.synth.claims_generator import generate_claim_task_sets  # noqa: E402
 from charcot_gym.synth.clinical_scores import generate_clinical_score_task_sets  # noqa: E402
 from charcot_gym.synth.ehr_web import generate_ehr_web_task_sets  # noqa: E402
@@ -123,8 +123,6 @@ def main() -> int:
     bands_parser.add_argument("--model", action="append", dest="models")
     bands_parser.add_argument("--tasks-dir", type=Path, default=TASKS_ROOT)
     bands_parser.add_argument("--check", action="store_true")
-    dedup_parser = subparsers.add_parser("dedup")
-    dedup_parser.add_argument("--tasks-dir", type=Path, default=TASKS_ROOT)
     args = parser.parse_args()
     if args.command == "check":
         return check()
@@ -138,8 +136,6 @@ def main() -> int:
         if args.results is None and not args.check:
             parser.error("bands requires --results unless --check is set")
         return bands(args.tasks_dir, args.results, models=args.models, check=args.check)
-    if args.command == "dedup":
-        return dedup(load_tasks(args.tasks_dir))
     private_root = args.private_root.resolve() if args.private_root else None
     if args.refresh is not None and private_root is None:
         parser.error("--refresh requires --private-root")
@@ -479,26 +475,6 @@ def _read_bands(tasks_dir: Path) -> dict[str, str]:
     return {str(key): str(value) for key, value in json.loads(path.read_text()).items()}
 
 
-def dedup(tasks: list[Task]) -> int:
-    failed = False
-    for split, (count, rate) in _duplicate_rates(tasks).items():
-        print(f"{split}: {rate:.1%} of {count} tasks share a skeleton with another task")
-        failed = failed or rate > MAX_DUPLICATE_RATE
-    if failed:
-        print(f"Skeleton duplication is above {MAX_DUPLICATE_RATE:.0%}.")
-        return 1
-    return 0
-
-
-def _duplicate_rates(tasks: list[Task]) -> dict[str, tuple[int, float]]:
-    splits = sorted({task.split for task in tasks})
-    rates = {}
-    for split in splits:
-        selected = [task for task in tasks if task.split == split]
-        rates[split] = (len(selected), duplicate_rate(selected))
-    return rates
-
-
 def _band_lines(tasks: list[Task]) -> list[str]:
     counts = Counter((task.family, task.band, task.source_level) for task in tasks)
     lines = [
@@ -521,21 +497,30 @@ def _skeleton_lines(tasks: list[Task]) -> list[str]:
         "| Split | Tasks | Duplicated | Rate |",
         "| --- | ---: | ---: | ---: |",
     ]
-    for split, (count, rate) in _duplicate_rates(tasks).items():
+    for split, (count, rate) in split_duplication(tasks).items():
         lines.append(f"| {split} | {count} | {round(rate * count)} | {rate:.3f} |")
     lines.extend(["", f"Limit: {MAX_DUPLICATE_RATE:.3f} per split."])
     return lines
 
 
 def check() -> int:
+    failed = False
     findings = _blocked_term_findings()
     findings.extend(_style_findings())
     if findings:
         print("Source standards check failed:")
         print("\n".join(sorted(set(findings))))
-        return 1
-    print("Source standards check passed.")
-    return 0
+        failed = True
+    else:
+        print("Source standards check passed.")
+    duplicates = dedup_findings(load_tasks())
+    if duplicates:
+        print("Skeleton dedup check failed:")
+        print("\n".join(duplicates))
+        failed = True
+    else:
+        print("Skeleton dedup check passed.")
+    return int(failed)
 
 
 def _generated_private_counts(seed: int) -> Counter[tuple[str, str, str]]:

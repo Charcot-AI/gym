@@ -54,6 +54,37 @@ def duplicate_rate(tasks: Iterable[Task]) -> float:
     return duplicated / total if total else 0.0
 
 
+def split_duplication(tasks: Iterable[Task]) -> dict[str, tuple[int, float]]:
+    """Return task count and duplicate rate for each split."""
+    by_split: dict[str, list[Task]] = {}
+    for task in tasks:
+        by_split.setdefault(task.split, []).append(task)
+    return {
+        split: (len(selected), duplicate_rate(selected))
+        for split, selected in sorted(by_split.items())
+    }
+
+
+def dedup_findings(tasks: Iterable[Task]) -> list[str]:
+    """Return splits over the duplicate limit and skeletons shared across splits."""
+    tasks = list(tasks)
+    findings = [
+        f"{split}: {rate:.1%} of {count} tasks share a skeleton (limit {MAX_DUPLICATE_RATE:.0%})"
+        for split, (count, rate) in split_duplication(tasks).items()
+        if rate > MAX_DUPLICATE_RATE
+    ]
+    splits = sorted({task.split for task in tasks})
+    for index, left in enumerate(splits):
+        for right in splits[index + 1 :]:
+            shared = skeleton_overlap(
+                (task for task in tasks if task.split == left),
+                (task for task in tasks if task.split == right),
+            )
+            if shared:
+                findings.append(f"{left} and {right} share {len(shared)} skeletons")
+    return findings
+
+
 def skeleton_overlap(left: Iterable[Task], right: Iterable[Task]) -> frozenset[str]:
     """Return skeleton hashes present in both task sets."""
     return frozenset(skeleton_hash(task) for task in left) & frozenset(
