@@ -5,6 +5,8 @@ import json
 from datetime import date
 from pathlib import Path
 
+from quality import PUBLIC_SETS
+
 from charcot_gym import Task, load_tasks
 from charcot_gym.terminology import hcpcs_is_active_on
 
@@ -83,14 +85,14 @@ def test_routine_claims_have_age_appropriate_awv_history_and_fees() -> None:
             assert hcpcs_is_active_on(code, service_date.isoformat()), (task.id, code)
 
     routine = [task for task in all_tasks if task.metadata["scenario_id"] == "routine"]
-    assert len(routine) == 5
+    assert len(routine) == 5 * PUBLIC_SETS
     assert (
         sum(
             item["productOrService"]["coding"][0]["code"] == "G0439"
             for task in routine
             for item in task.gold["expected_claim"]["item"]
         )
-        == len(routine) // 2
+        == len(routine) // PUBLIC_SETS // 2 * PUBLIC_SETS
     )
     for task in routine:
         patient = next(
