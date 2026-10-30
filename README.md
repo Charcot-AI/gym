@@ -48,7 +48,7 @@ The agent adds ALT 49 and AST 36, dated July 6, 2025, and stops. The checker con
 Install from the public Git repository:
 
 ```sh
-python -m pip install "git+https://github.com/Charcot-AI/gym.git"
+python -m pip install "git+https://github.com/Charcot-AI/gym.git@v1.0.0"
 ```
 
 For a source checkout, install development tools and list public tasks:
