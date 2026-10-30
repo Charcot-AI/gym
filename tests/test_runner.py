@@ -19,16 +19,28 @@ from charcot_gym.runner.client import ModelConfig, OpenAIChatClient
 from charcot_gym.runner.episode import _image_data_uri, run_episode
 from charcot_gym.runner.evaluation import evaluate
 from charcot_gym.runner.leaderboard import build_leaderboard
-from charcot_gym.runner.metrics import bootstrap_ci, pass_at_k, pass_power_k
+from charcot_gym.runner.metrics import (
+    bootstrap_ci,
+    pass_at_k,
+    pass_power_k,
+    summarize_episodes,
+)
 from charcot_gym.task import load_tasks
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ScriptedClient:
-    def __init__(self, actions: list[tuple[str, dict[str, Any]]], *, cost: float = 0.01):
+    def __init__(
+        self,
+        actions: list[tuple[str, dict[str, Any]]],
+        *,
+        cost: float = 0.01,
+        provider: str | None = None,
+    ):
         self.actions = [*actions, ("submit", {"answer": {}})]
         self.cost = cost
+        self.provider = provider
         self.calls = 0
 
     def complete(
@@ -48,9 +60,39 @@ class ScriptedClient:
             for index, (name, args) in enumerate(self.actions)
         ]
         self.actions = []
-        return {
+        response = {
             "choices": [{"message": {"role": "assistant", "tool_calls": calls}}],
             "usage": {"prompt_tokens": 20, "completion_tokens": 5, "cost": self.cost},
+        }
+        if self.provider is not None:
+            response["provider"] = self.provider
+        return response
+
+
+class MultiTurnClient:
+    def __init__(self, turns: list[tuple[list[tuple[str, dict[str, Any]]], str]]):
+        self.turns = list(turns)
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        timeout_s: float | None = None,
+    ) -> dict[str, Any]:
+        actions, provider = self.turns.pop(0)
+        calls = [
+            {
+                "id": str(index),
+                "type": "function",
+                "function": {"name": name, "arguments": json.dumps(args)},
+            }
+            for index, (name, args) in enumerate(actions)
+        ]
+        return {
+            "choices": [{"message": {"role": "assistant", "tool_calls": calls}}],
+            "provider": provider,
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.01},
         }
 
 
@@ -91,6 +133,7 @@ class HangOnceTransport(httpx.AsyncBaseTransport):
             request=request,
             json={
                 "choices": [{"message": {"role": "assistant", "content": ""}}],
+                "provider": "router-test",
                 "usage": {},
             },
         )
@@ -149,12 +192,38 @@ def test_scripted_oracle_runs_a_task_from_each_family_and_exports_all_tools() ->
         assert result.score is not None and result.score.value == 1.0
 
 
+def test_episode_counts_turns_tool_calls_and_distinct_providers() -> None:
+    task = next(
+        task
+        for task in load_tasks()
+        if task.family == "document_fhir"
+        and task.split == "public"
+        and task.difficulty == "standard"
+        and task.modality == "text"
+    )
+    actions = [(call.name, call.arguments) for call in oracle_turns(task)[0]]
+    client = MultiTurnClient(
+        [
+            ([actions[0]], "router-a"),
+            (actions[1:3], "router-b"),
+            ([("submit", {"answer": {}})], "router-a"),
+        ]
+    )
+    result = run_episode(task, ModelConfig(model="fake"), client=client)
+
+    assert result.turns == 3
+    assert result.tool_calls == 4
+    assert result.providers == ["router-a", "router-b"]
+
+
 def test_noop_is_scored_zero_and_api_failure_is_errored() -> None:
     task = task_for("claims")
     no_op = run_episode(task, ModelConfig(model="fake"), client=NoOpClient())
     assert no_op.status == "scored" and no_op.score is not None and no_op.score.value == 0
+    assert no_op.turns == 1 and no_op.tool_calls == 0
     failed = run_episode(task, ModelConfig(model="fake"), client=ErrorClient())
     assert failed.status == "errored" and failed.score is None
+    assert failed.turns == 1 and failed.tool_calls == 0 and failed.providers == []
 
 
 def test_http_timeout_marks_episode_errored_and_continues(tmp_path: Path, monkeypatch: Any) -> None:
@@ -179,6 +248,8 @@ def test_http_timeout_marks_episode_errored_and_continues(tmp_path: Path, monkey
     )
     assert summary["launched_episode_count"] == 3
     assert summary["overall"]["errored_count"] == 1
+    assert summary["overall"]["timeout_count"] == 1
+    assert summary["overall"]["providers"] == {"router-test": 2}
     assert set(path.name for path in output.iterdir()) == {
         "summary.json",
         "submission.json",
@@ -338,9 +409,23 @@ def test_private_keep_episodes_writes_only_safe_record_fields(tmp_path: Path) ->
     records = (output / "episodes.jsonl").read_text().splitlines()
     assert len(records) == 1
     record = json.loads(records[0])
-    assert set(record) == {"task_id_hash", "score", "status", "failed_checks"}
+    assert set(record) == {
+        "task_id_hash",
+        "score",
+        "status",
+        "failed_checks",
+        "wall_time_s",
+        "turns",
+        "tool_calls",
+        "providers",
+    }
     assert record["task_id_hash"] != task.id
     assert isinstance(record["failed_checks"], list)
+    assert record["wall_time_s"] > 0
+    assert record["turns"] == 1
+    assert record["tool_calls"] == 0
+    assert record["providers"] == []
+    assert "task_id" not in record
     assert set(path.name for path in output.iterdir()) == {
         "summary.json",
         "submission.json",
@@ -350,6 +435,82 @@ def test_private_keep_episodes_writes_only_safe_record_fields(tmp_path: Path) ->
     assert task.id not in artifacts
     assert task.prompt not in artifacts
     assert "trajectory" not in artifacts
+    assert json.loads((output / "summary.json").read_text())["concurrency"] == 1
+
+
+def test_public_episode_record_includes_efficiency_metrics(tmp_path: Path) -> None:
+    task = task_for("claims")
+    output = tmp_path / "public-episodes"
+    evaluate(
+        [task],
+        ModelConfig(model="fake"),
+        split="public",
+        attempts=1,
+        concurrency=2,
+        max_cost_usd=None,
+        out_dir=output,
+        client=ScriptedClient(oracle_tool_calls(task), provider="router-test"),
+        keep_episodes=True,
+    )
+
+    record = json.loads((output / "episodes.jsonl").read_text().splitlines()[0])
+    assert record["wall_time_s"] > 0
+    assert record["turns"] == 1
+    assert record["tool_calls"] == len(oracle_tool_calls(task)) + 1
+    assert record["providers"] == ["router-test"]
+    assert json.loads((output / "summary.json").read_text())["concurrency"] == 2
+
+
+def test_efficiency_summary_uses_nearest_rank_and_excludes_errors() -> None:
+    latencies = [1, 2, 3, 4, 10]
+    scored = [
+        {
+            "task_id_hash": f"task-{index}",
+            "family": "claims",
+            "scenario": "scenario",
+            "score": 1.0,
+            "passed": True,
+            "status": "scored",
+            "wall_time_s": latency,
+            "turns": latency,
+            "tool_calls": latency,
+            "cost_usd": 0.1,
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            "providers": ["router-a" if index % 2 == 0 else "router-b"],
+            "checks": [],
+        }
+        for index, latency in enumerate(latencies)
+    ]
+    episodes = [
+        *scored,
+        {
+            **scored[0],
+            "score": None,
+            "passed": None,
+            "status": "errored",
+            "error_kind": "timeout",
+            "wall_time_s": 999,
+            "turns": 999,
+            "tool_calls": 999,
+            "cost_usd": 0.5,
+            "providers": ["router-timeout"],
+        },
+    ]
+
+    summary = summarize_episodes(episodes, attempts=2)
+
+    for group in (summary["overall"], summary["families"]["claims"]):
+        assert group["latency_p50_s"] == 3
+        assert group["latency_p90_s"] == 10
+        assert group["turns_p50"] == 3
+        assert group["tool_calls_p50"] == 3
+        assert group["timeout_count"] == 1
+        assert group["cost_per_task_usd"] == pytest.approx(0.2)
+        assert group["providers"] == {
+            "router-a": 3,
+            "router-b": 2,
+            "router-timeout": 1,
+        }
 
 
 def test_submission_command_backfills_run_without_overwriting(tmp_path: Path, capsys: Any) -> None:
