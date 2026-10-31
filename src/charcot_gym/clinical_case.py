@@ -495,7 +495,7 @@ def _catalog_code(code: str, action: CaseAction | None) -> tuple[str, str]:
 @cache
 def _bundled_codes() -> tuple[dict[str, Any], ...]:
     entries: list[dict[str, Any]] = []
-    for name in ("loinc_subset.json", "hcpcs_subset.json"):
+    for name in ("loinc_subset.json", "hcpcs_subset.json", "clinical_case_codes.json"):
         entries.extend(json.loads(files("charcot_gym").joinpath("data", name).read_text("utf-8")))
     return tuple(entries)
 
