@@ -17,6 +17,7 @@ from typing import Any, Literal, Protocol
 from charcot_gym.clinical_case import (
     ACQUISITION_TOOLS,
     acquisition_phase,
+    cheapest_order,
     necessary_facts,
     order_cost,
 )
@@ -359,7 +360,7 @@ def _acquisition(case: ClinicalCase, replay: _Replay) -> dict[str, Any]:
     needed = necessary_facts(case)
     needed_ids = {fact.id for fact in needed}
     needed_cost = sum(
-        min(order_cost(case, code) for code in fact.topics)
+        order_cost(case, cheapest_order(case, fact.topics))
         for fact in needed
         if fact.source == "order_test"
     )

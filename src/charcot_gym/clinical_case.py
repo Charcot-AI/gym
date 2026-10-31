@@ -69,6 +69,12 @@ def orderable(case: ClinicalCase, code: str) -> bool:
     ) or any(entry["code"] == code for entry in _bundled_codes())
 
 
+def cheapest_order(case: ClinicalCase, codes: Sequence[str]) -> str:
+    """The orderable code with the lowest cost and risk, in listed order on ties."""
+    candidates = [code for code in codes if orderable(case, code)] or list(codes)
+    return min(candidates, key=lambda code: (order_cost(case, code), list(codes).index(code)))
+
+
 class CaseError(ValueError):
     """An action the case rules reject."""
 

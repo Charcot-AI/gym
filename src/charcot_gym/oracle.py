@@ -9,10 +9,9 @@ from typing import Any
 from charcot_gym.clinical_case import (
     CaseEpisode,
     acquisition_phase,
+    cheapest_order,
     clinical_topics,
     necessary_facts,
-    order_cost,
-    orderable,
 )
 from charcot_gym.env import ToolCall
 from charcot_gym.fhir_store import FHIRStore
@@ -404,7 +403,7 @@ def _acquisitions(case: ClinicalCase, index: int, performed: set[str]) -> list[T
         calls.append(ToolCall(name="examine", arguments={"systems": systems}))
     for record in dict.fromkeys(fact.topics[0] for fact in facts if fact.source == "review_prior"):
         calls.append(ToolCall(name="review_prior", arguments={"resource_id": record}))
-    orders = [_cheapest_order(case, fact.topics) for fact in facts if fact.source == "order_test"]
+    orders = [cheapest_order(case, fact.topics) for fact in facts if fact.source == "order_test"]
     orders.extend(
         action.code
         for action in case.actions
@@ -447,11 +446,6 @@ def _intervene(case: ClinicalCase, action_id: str) -> ToolCall:
             "reason": action.display or "Indicated by the current assessment.",
         },
     )
-
-
-def _cheapest_order(case: ClinicalCase, codes: tuple[str, ...]) -> str:
-    candidates = [code for code in codes if orderable(case, code)] or list(codes)
-    return min(candidates, key=lambda code: (order_cost(case, code), codes.index(code)))
 
 
 def _assessment(
