@@ -2618,8 +2618,8 @@ BASELINES = (
         options=BaselineOptions(matches=_has_trap("diabetes_excludes1")),
     ),
     _clinical_baseline(
-        "reference",
-        "Follow the gold work-up; the ceiling the other clinical policies are compared to.",
+        "oracle",
+        "Replay the reference oracle turns; the ceiling the other clinical policies face.",
         "one",
     ),
     _clinical_baseline(
