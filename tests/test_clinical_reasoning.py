@@ -11,7 +11,7 @@ from charcot_gym import ClinicalEnv, Score, Task, load_tasks, oracle_turns, repl
 from charcot_gym.clinical_case import clinical_topics
 from charcot_gym.env import Submit, ToolCall
 from charcot_gym.task import CASE_PHASES
-from charcot_gym.verifier import ClinicalReasoningVerifier, RubricGrade
+from charcot_gym.verifier import Checkpoint, ClinicalReasoningVerifier, RubricGrade
 
 CASE_ID = "clinical-reasoning-public-001"
 
@@ -419,39 +419,73 @@ def test_same_icd10_group_earns_partial_diagnosis(task: Task) -> None:
 
 
 class FixedGrader:
-    def __init__(self, grade: RubricGrade) -> None:
+    def __init__(
+        self, grade: RubricGrade, *, case_items: bool = True, checkpoint_items: bool = True
+    ) -> None:
         self.value = grade
-        self.seen: list[str] = []
+        self.case_items = case_items
+        self.checkpoint_items = checkpoint_items
+        self.seen: list[Checkpoint] = []
 
-    def grade(
-        self, task: Task, assessments: Sequence[Mapping[str, Any]]
-    ) -> Mapping[str, RubricGrade]:
-        self.seen = [item["phase"] for item in assessments]
-        items = [item.id for item in task.case.rubric]  # type: ignore[union-attr]
-        plan = [f"plan-{index}" for index in range(len(task.case.gold.plan))]  # type: ignore[union-attr]
-        return dict.fromkeys([*items, *plan], self.value)
+    def grade(self, task: Task, checkpoints: Sequence[Checkpoint]) -> Mapping[str, RubricGrade]:
+        self.seen = list(checkpoints)
+        case = task.case
+        assert case is not None
+        keys: list[str] = []
+        if self.case_items:
+            keys += [item.id for item in case.rubric]
+            keys += [f"plan-{index}" for index in range(len(case.gold.plan))]
+        if self.checkpoint_items:
+            keys += [key for checkpoint in checkpoints for key in checkpoint.item_ids]
+        return dict.fromkeys(keys, self.value)
+
+
+def _graded(task: Task, actions: list[ToolCall | Submit], grader: FixedGrader) -> Score:
+    env, _ = _run(task, actions)
+    trajectory = [entry.model_dump(mode="json") for entry in env.trajectory.entries]
+    state = env._store.snapshot()  # type: ignore[union-attr]
+    return ClinicalReasoningVerifier(grader).verify(task, state, {}, trajectory)
 
 
 def test_rubric_grader_scores_free_text_items_only(task: Task) -> None:
-    env, _ = _run(task, _oracle_actions(task))
-    trajectory = [entry.model_dump(mode="json") for entry in env.trajectory.entries]
-    state = env._store.snapshot()  # type: ignore[union-attr]
-    grader = FixedGrader(0)
-    graded = ClinicalReasoningVerifier(grader).verify(task, state, {}, trajectory)
-    assert grader.seen == list(CASE_PHASES)
+    grader = FixedGrader(0, checkpoint_items=False)
+    graded = _graded(task, _oracle_actions(task), grader)
+    assert [checkpoint.phase for checkpoint in grader.seen] == list(CASE_PHASES)
     assert graded.components["presentation"] < 1.0
     assert graded.components["history"] == 1.0
     assert graded.components["diagnosis"] < 1.0
+
+
+def test_grader_sees_questions_and_actions_per_checkpoint(task: Task) -> None:
+    grader = FixedGrader(2)
+    _graded(task, SOLVE, grader)
+    presentation, history, exam = grader.seen[:3]
+    assert presentation.questions == () and presentation.actions == ()
+    assert [question.topics for question in history.questions] == [
+        ("medication_changes",),
+        ("supplements",),
+    ]
+    assert history.questions[1].text == "Do you use a salt substitute or supplements?"
+    assert "hx-new-spironolactone" in history.revealed
+    assert [action.name for action in exam.actions] == ["examine"]
+    assert "history/patient_questions" in history.item_ids
+    assert "presentation/patient_questions" not in presentation.item_ids
+
+
+def test_checkpoint_grades_count_in_each_level(task: Task) -> None:
+    full = _graded(task, _oracle_actions(task), FixedGrader(2))
+    assert full.value == 1.0
+    graded = _graded(task, _oracle_actions(task), FixedGrader(0, case_items=False))
+    assert all(graded.components[phase] < 1.0 for phase in CASE_PHASES)
+    assert graded.components["gates"] == 1.0
+    assert not _check(graded, "free_text") and _check(full, "free_text")
 
 
 def test_rubric_grader_never_lifts_a_gate(task: Task) -> None:
     potassium = ToolCall(
         name="intervene", arguments={"kind": "treat", "code": "J3480", "reason": "Weakness"}
     )
-    env, _ = _run(task, [*_oracle_actions(task)[:3], potassium])
-    trajectory = [entry.model_dump(mode="json") for entry in env.trajectory.entries]
-    state = env._store.snapshot()  # type: ignore[union-attr]
-    score = ClinicalReasoningVerifier(FixedGrader(2)).verify(task, state, {}, trajectory)
+    score = _graded(task, [*_oracle_actions(task)[:3], potassium], FixedGrader(2))
     assert score.value == 0.0
 
 
