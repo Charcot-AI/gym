@@ -237,6 +237,14 @@ def _with_refuting_event(task: Task) -> Task:
     return _variant(task, events=(event,))
 
 
+def _event_only_reassessment(task: Task) -> Task:
+    case = _with_refuting_event(task).case
+    assert case is not None
+    plan = tuple(item.model_copy(update={"code": None}) for item in case.gold.plan)
+    rubric = tuple(item for item in case.rubric if item.phase != "diagnosis")
+    return _variant(task, events=case.events, rubric=rubric, gold={"plan": plan})
+
+
 ANCHORED = [
     {"code": "E03.9", "status": "provisional", "rank": 1},
     {"code": "E87.5", "status": "differential", "rank": 2},
@@ -279,8 +287,18 @@ def test_oracle_scores_one_with_reasoning_turns(task: Task) -> None:
         _with_refuting_event,
         lambda task: _variant(task, unstable=True, stabilize_within=1),
         lambda task: _variant(task, gold={"diagnosis_uncertain": True}),
+        lambda task: _variant(
+            task,
+            gold={
+                "plan": tuple(
+                    item.model_copy(update={"code": None})
+                    for item in task.case.gold.plan  # type: ignore[union-attr]
+                )
+            },
+        ),
+        _event_only_reassessment,
     ],
-    ids=["refuting-event", "unstable", "diagnosis-uncertain"],
+    ids=["refuting-event", "unstable", "diagnosis-uncertain", "uncoded-plan", "event-only"],
 )
 def test_oracle_scores_one_on_case_variants(task: Task, variant: Any) -> None:
     case = variant(task)
@@ -411,3 +429,33 @@ def test_rubric_grader_never_lifts_a_gate(task: Task) -> None:
     state = env._store.snapshot()  # type: ignore[union-attr]
     score = ClinicalReasoningVerifier(FixedGrader(2)).verify(task, state, {}, trajectory)
     assert score.value == 0.0
+
+
+def test_uncertain_case_without_assessments_does_not_pass(task: Task) -> None:
+    uncertain = _variant(task, gold={"diagnosis_uncertain": True})
+    score = _score(uncertain, [Submit(answer={"note": "done"})])
+    assert not score.passed and score.value == 0.0
+
+
+def test_fatal_diagnosis_assessment_earns_no_boss(task: Task) -> None:
+    actions = [
+        action
+        for action in SOLVE
+        if not (isinstance(action, ToolCall) and action.name == "intervene")
+    ]
+    score = _score(task, actions)
+    assert not _check(score, "survived")
+    assert score.components["diagnosis"] == 0.0
+
+
+def test_reordering_after_refuting_event_reopens_the_differential(task: Task) -> None:
+    case = _with_refuting_event(task)
+    first = {"code": "E03.9", "status": "differential"}
+    second = {"code": "E87.5", "status": "differential"}
+    actions = _anchoring()
+    tests, reassessment = 10, 13
+    assert SOLVE[reassessment].arguments.get("change_pattern")  # type: ignore[union-attr]
+    actions[tests] = _assess([{**first, "rank": 1}, {**second, "rank": 2}])
+    actions[reassessment] = _assess([{**first, "rank": 2}, {**second, "rank": 1}])
+    score = _score(case, actions)
+    assert _check(score, "reassessment"), score.checks

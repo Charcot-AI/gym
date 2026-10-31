@@ -11,6 +11,7 @@ from charcot_gym.clinical_case import (
     acquisition_phase,
     clinical_topics,
     necessary_facts,
+    order_cost,
 )
 from charcot_gym.env import ToolCall
 from charcot_gym.fhir_store import FHIRStore
@@ -354,15 +355,14 @@ def _case_turns(task: Task, case: ClinicalCase) -> list[OracleTurn]:
         run(calls[0])
         for call in window:
             run(call)
-        if window:
-            waits = [episode.results_due]
-            if index + 1 == CASE_PHASES.index("reassessment"):
-                waits.extend(event.at_minutes for event in case.events)
-            until = max((minute for minute in waits if minute is not None), default=0)
-            if until > episode.minutes:
-                wait = ToolCall(name="wait", arguments={"minutes": until - episode.minutes})
-                run(wait)
-                window = [*window, wait]
+        waits = [episode.results_due]
+        if index + 1 == CASE_PHASES.index("reassessment"):
+            waits.extend(event.at_minutes for event in case.events)
+        until = max((minute for minute in waits if minute is not None), default=0)
+        if index + 1 < len(CASE_PHASES) and until > episode.minutes:
+            wait = ToolCall(name="wait", arguments={"minutes": until - episode.minutes})
+            run(wait)
+            window = [*window, wait]
         calls.extend(window)
         turns.append(OracleTurn(calls, reasoning=_reasoning(phase, assessment)))
     return turns
@@ -449,12 +449,7 @@ def _intervene(case: ClinicalCase, action_id: str) -> ToolCall:
 
 
 def _cheapest_order(case: ClinicalCase, codes: tuple[str, ...]) -> str:
-    listed = [
-        (action.cost_usd, action.code)
-        for action in case.actions
-        if action.tool == "order_test" and action.code in codes
-    ]
-    return min(listed)[1] if listed else codes[0]
+    return min(codes, key=lambda code: (order_cost(case, code), codes.index(code)))
 
 
 def _assessment(

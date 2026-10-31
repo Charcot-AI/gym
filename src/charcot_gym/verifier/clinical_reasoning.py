@@ -14,7 +14,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
-from charcot_gym.clinical_case import ACQUISITION_TOOLS, acquisition_phase, necessary_facts
+from charcot_gym.clinical_case import (
+    ACQUISITION_TOOLS,
+    acquisition_phase,
+    necessary_facts,
+    order_cost,
+)
 from charcot_gym.task import CASE_PHASES, CaseFact, ClinicalCase, RubricItem, Task
 from charcot_gym.verifier.contracts import Check, Score
 
@@ -35,8 +40,6 @@ MAX_TRUE_RANK = {
     "diagnosis": 1,
 }
 DIAGNOSIS_GROUP_CREDIT = 0.5
-RISK_COST_USD = {"none": 0.0, "low": 5.0, "moderate": 50.0, "high": 200.0}
-UNLISTED_TEST_COST_USD = 25.0
 MIN_COST_SCALE_USD = 50.0
 MAX_COST_PENALTY = 0.5
 NEGATIVE_ALLOWANCE = 2
@@ -230,7 +233,8 @@ class ClinicalReasoningVerifier:
             ],
         ]
         outcome = boss_parts.get("diagnosis", 0.0) == 1.0 or not scored_boss
-        passed = replay.death is None and factor == 1.0 and outcome
+        completed = len(replay.assessments) == len(CASE_PHASES) and _chained(final_state)
+        passed = replay.death is None and completed and factor == 1.0 and outcome
         return Score(value=value, passed=passed, checks=checks, components=components)
 
     def _grades(self, task: Task, replay: _Replay) -> dict[str, int]:
@@ -342,13 +346,6 @@ def _rank_detail(case: ClinicalCase, replay: _Replay) -> str:
     return ", ".join(f"{item.phase} {_true_rank(case, item) or '-'}" for item in replay.assessments)
 
 
-def _order_cost(case: ClinicalCase, code: str) -> float:
-    for action in case.actions:
-        if action.tool == "order_test" and action.code == code:
-            return action.cost_usd + RISK_COST_USD[action.risk]
-    return UNLISTED_TEST_COST_USD
-
-
 def _revealing_facts(case: ClinicalCase, tool: str, key: str) -> list[CaseFact]:
     return [fact for fact in case.facts if fact.source == tool and key in fact.topics]
 
@@ -362,7 +359,7 @@ def _acquisition(case: ClinicalCase, replay: _Replay) -> dict[str, Any]:
     needed = necessary_facts(case)
     needed_ids = {fact.id for fact in needed}
     needed_cost = sum(
-        min(_order_cost(case, code) for code in fact.topics)
+        min(order_cost(case, code) for code in fact.topics)
         for fact in needed
         if fact.source == "order_test"
     )
@@ -382,7 +379,7 @@ def _acquisition(case: ClinicalCase, replay: _Replay) -> dict[str, Any]:
                 negatives[index] += 1
             useful = {fact.id for fact in facts} & needed_ids - covered
             if acquisition.tool == "order_test" and not useful:
-                excess[index] += _order_cost(case, key)
+                excess[index] += order_cost(case, key)
             seen.add((acquisition.tool, key))
             covered |= useful
 
@@ -431,7 +428,8 @@ def _reassessment(case: ClinicalCase, replay: _Replay) -> tuple[float, str]:
             continue
         current = after[0]
         position = replay.assessments.index(current)
-        previous = replay.assessments[position - 1].statuses() if position else {}
+        before = replay.assessments[position - 1] if position else None
+        previous = (before.statuses(), before.ranked()) if before is not None else ({}, [])
         statuses = current.statuses()
         leading = current.ranked()[:1]
         kept = [
@@ -439,7 +437,7 @@ def _reassessment(case: ClinicalCase, replay: _Replay) -> tuple[float, str]:
             for code in event.refutes
             if code in leading or statuses.get(code) in {"provisional", "confirmed"}
         ]
-        reopened = statuses != previous and not kept
+        reopened = (statuses, current.ranked()) != previous and not kept
         credits.append(float(reopened))
         notes.append(
             f"{event.id}: reopened"
@@ -452,7 +450,8 @@ def _reassessment(case: ClinicalCase, replay: _Replay) -> tuple[float, str]:
 def _boss(
     case: ClinicalCase, replay: _Replay, grades: Mapping[str, int], rubric: float | None
 ) -> tuple[dict[str, float], list[Check]]:
-    final = replay.assessments[-1] if len(replay.assessments) == len(CASE_PHASES) else None
+    cleared = len(replay.assessments) == len(CASE_PHASES) and replay.death_phase >= len(CASE_PHASES)
+    final = replay.assessments[-1] if cleared else None
     gold = case.gold
     uncertain = " (not scored: diagnosis uncertain)" if gold.diagnosis_uncertain else ""
     parts: dict[str, float] = {}
