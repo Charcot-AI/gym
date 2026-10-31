@@ -21,7 +21,7 @@ from charcot_gym.clinical_case import (
     necessary_facts,
     order_cost,
 )
-from charcot_gym.task import CASE_PHASES, CaseFact, ClinicalCase, RubricItem, Task
+from charcot_gym.task import CASE_PHASES, CaseFact, CasePhase, ClinicalCase, RubricItem, Task
 from charcot_gym.verifier.contracts import Check, Score
 
 RubricGrade = Literal[0, 1, 2]
@@ -30,7 +30,7 @@ LEVELS = CASE_PHASES[:-1]
 LEVEL_WEIGHT = 1.0
 BOSS_WEIGHT = float(len(LEVELS))
 BOSS_BASE = 0.5
-BOSS_WEIGHTS = {"cant_miss": 1.0, "plan": 1.0, "rubric": 1.0}
+BOSS_WEIGHTS = {"cant_miss": 1.0, "plan": 1.0, "rubric": 1.0, "free_text": 1.0}
 RUBRIC_WEIGHTS = {"critical": 2.0, "bonus": 1.0}
 MAX_TRUE_RANK = {
     "presentation": 3,
@@ -48,18 +48,58 @@ UNNECESSARY_PENALTY = 0.1
 MAX_UNNECESSARY_PENALTY = 0.5
 PREMATURE_CLOSURE_FACTOR = 0.5
 STABILIZING_KINDS = {"stabilize", "refer_emergency"}
+CHECKPOINT_ITEMS = ("synthesis", "differential_justification", "next_step_risk_benefit")
+QUESTION_ITEM = "patient_questions"
+
+
+@dataclass(frozen=True)
+class PatientQuestion:
+    """A question put to the patient and the history topics it was answered on."""
+
+    text: str
+    topics: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AgentAction:
+    """An accepted tool call other than an assessment."""
+
+    name: str
+    arguments: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    """One accepted assessment and what the agent did and learned before it.
+
+    `questions` and `actions` cover the calls since the previous checkpoint;
+    `revealed` holds every fact id known when the assessment was recorded.
+    """
+
+    index: int
+    phase: CasePhase
+    assessment: Mapping[str, Any]
+    revealed: tuple[str, ...]
+    questions: tuple[PatientQuestion, ...]
+    actions: tuple[AgentAction, ...]
+
+    @property
+    def item_ids(self) -> tuple[str, ...]:
+        """Grade keys of the free-text items every checkpoint carries."""
+        items = (*CHECKPOINT_ITEMS, QUESTION_ITEM) if self.questions else CHECKPOINT_ITEMS
+        return tuple(f"{self.phase}/{item}" for item in items)
 
 
 class RubricGrader(Protocol):
-    """Grades free-text rubric items that no fact, action, or hypothesis anchors.
+    """Grades free-text items that no fact, action, or hypothesis anchors.
 
-    Keys are rubric item ids and `plan-<index>` for uncoded gold plan items. Grades
-    for anchored items are ignored, so the deterministic result always wins.
+    Keys are case rubric item ids, `plan-<index>` for uncoded gold plan items, and
+    `Checkpoint.item_ids` for the synthesis, justification, next-step, and question
+    items of each checkpoint. Grades for anchored items are ignored, so the
+    deterministic result always wins, and gates apply after every grade.
     """
 
-    def grade(
-        self, task: Task, assessments: Sequence[Mapping[str, Any]]
-    ) -> Mapping[str, RubricGrade]:
+    def grade(self, task: Task, checkpoints: Sequence[Checkpoint]) -> Mapping[str, RubricGrade]:
         """Return a 0/1/2 grade per gradable item id."""
         ...
 
@@ -98,6 +138,12 @@ class _Assessment:
 
 
 @dataclass
+class _Window:
+    questions: list[PatientQuestion] = field(default_factory=list)
+    actions: list[AgentAction] = field(default_factory=list)
+
+
+@dataclass
 class _Acquisition:
     phase_index: int
     tool: str
@@ -115,6 +161,7 @@ class _Replay:
     death: dict[str, Any] | None = None
     death_phase: int = len(CASE_PHASES)
     early_acquisitions: int = 0
+    windows: dict[int, _Window] = field(default_factory=dict)
 
 
 class ClinicalReasoningVerifier:
@@ -141,6 +188,7 @@ class ClinicalReasoningVerifier:
         replay = _replay(case, trajectory)
         grades = self._grades(task, replay)
         rubric = _rubric_credits(case, replay, grades)
+        free_text = _checkpoint_credits(replay, grades)
         ranks = _rank_credits(case, replay)
         acquisition = _acquisition(case, replay)
         reassessment, reassessment_detail = _reassessment(case, replay)
@@ -153,6 +201,8 @@ class ClinicalReasoningVerifier:
             parts = [ranks[phase]]
             if phase in rubric:
                 parts.append(rubric[phase])
+            if phase in free_text:
+                parts.append(free_text[phase])
             if phase in acquisition["by_phase"]:
                 parts.append(acquisition["by_phase"][phase])
             if phase == "reassessment":
@@ -160,6 +210,8 @@ class ClinicalReasoningVerifier:
             levels[phase] = sum(parts) / len(parts)
 
         boss_parts, boss_checks = _boss(case, replay, grades, rubric.get(BOSS))
+        if BOSS in free_text and "diagnosis" in boss_parts:
+            boss_parts["free_text"] = free_text[BOSS]
         others = {name: value for name, value in boss_parts.items() if name != "diagnosis"}
         boss = boss_parts["diagnosis"] * (
             BOSS_BASE
@@ -241,8 +293,7 @@ class ClinicalReasoningVerifier:
     def _grades(self, task: Task, replay: _Replay) -> dict[str, int]:
         if self.grader is None:
             return {}
-        assessments = [{"phase": item.phase, **dict(item.arguments)} for item in replay.assessments]
-        grades: dict[str, int] = dict(self.grader.grade(task, assessments))
+        grades: dict[str, int] = dict(self.grader.grade(task, _checkpoints(replay)))
         invalid = sorted(key for key, grade in grades.items() if grade not in (0, 1, 2))
         if invalid:
             raise ValueError(f"rubric grades must be 0, 1, or 2: {', '.join(invalid)}")
@@ -259,6 +310,13 @@ def _replay(case: ClinicalCase, trajectory: Sequence[Mapping[str, Any]]) -> _Rep
         ok = "error" not in info and action.get("type") == "tool"
         name = action.get("name")
         arguments = action.get("arguments") or {}
+        if ok and name != "record_assessment" and isinstance(name, str):
+            window = replay.windows.setdefault(len(replay.assessments), _Window())
+            window.actions.append(AgentAction(name, dict(arguments)))
+            if name == "ask_patient":
+                topics = tuple(state.get("asked_topics", [])[len(asked) :])
+                question = PatientQuestion(str(arguments.get("question", "")), topics)
+                window.questions.append(question)
         if ok and name == "record_assessment" and len(replay.assessments) < len(CASE_PHASES):
             replay.assessments.append(
                 _Assessment(
@@ -295,6 +353,30 @@ def _replay(case: ClinicalCase, trajectory: Sequence[Mapping[str, Any]]) -> _Rep
             closing = ok and name == "record_assessment"
             replay.death_phase = len(replay.assessments) - closing
     return replay
+
+
+def _checkpoints(replay: _Replay) -> list[Checkpoint]:
+    return [
+        Checkpoint(
+            index=index,
+            phase=CASE_PHASES[index],
+            assessment=item.arguments,
+            revealed=tuple(sorted(item.revealed)),
+            questions=tuple(replay.windows.get(index, _Window()).questions),
+            actions=tuple(replay.windows.get(index, _Window()).actions),
+        )
+        for index, item in enumerate(replay.assessments)
+    ]
+
+
+def _checkpoint_credits(replay: _Replay, grades: Mapping[str, int]) -> dict[str, float]:
+    """Mean free-text grade per phase; phases without grades get no part."""
+    credits: dict[str, float] = {}
+    for checkpoint in _checkpoints(replay):
+        graded = [grades[key] / 2 for key in checkpoint.item_ids if key in grades]
+        if graded:
+            credits[checkpoint.phase] = sum(graded) / len(graded)
+    return credits
 
 
 def _anchored(item: RubricItem) -> bool:
