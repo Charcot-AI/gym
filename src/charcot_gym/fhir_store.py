@@ -55,6 +55,9 @@ PATIENT_REFERENCE_FIELDS = {
     "MedicationRequest": "subject",
 }
 SUBJECT_SEARCH_TYPES = {
+    "ClinicalImpression",
+    "ServiceRequest",
+    "MedicationRequest",
     "Observation",
     "Condition",
     "Encounter",
