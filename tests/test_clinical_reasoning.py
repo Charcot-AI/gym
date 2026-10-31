@@ -478,6 +478,7 @@ def test_checkpoint_grades_count_in_each_level(task: Task) -> None:
     graded = _graded(task, _oracle_actions(task), FixedGrader(0, case_items=False))
     assert all(graded.components[phase] < 1.0 for phase in CASE_PHASES)
     assert graded.components["gates"] == 1.0
+    assert not _check(graded, "free_text") and _check(full, "free_text")
 
 
 def test_rubric_grader_never_lifts_a_gate(task: Task) -> None:
