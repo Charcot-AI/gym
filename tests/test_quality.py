@@ -35,6 +35,10 @@ def test_baseline_scores_match_expectation(baseline: Baseline) -> None:
         assert max(scores) == 0
     elif baseline.expectation == "below_one":
         assert max(scores) < 1
+    elif baseline.expectation == "below_half":
+        assert max(scores) < 0.5
+    elif baseline.expectation == "one":
+        assert min(scores) == 1
     elif baseline.aggregate_partial:
         mean = sum(scores) / len(scores)
         assert 0 < mean < 1

@@ -6,7 +6,7 @@ import json
 import math
 import random
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from functools import cache
 from importlib.resources import files
 from typing import Any
@@ -21,7 +21,8 @@ VERIFIER = "clinical_reasoning_smoke"
 MAX_STEPS = 60
 DISCRIMINATING_LR = 2.0
 NEUTRAL_LR = 1.25
-HEMATOCRIT_FACTOR = (2.9, 3.1)
+# Most scripted CBCs come from infections or marrow disease, so neutrophils sit above the
+# calibrated outpatient fraction while staying below the white-cell count.
 NEUTROPHIL_FRACTION = (0.7, 0.85)
 FACT_PREFIX = {
     "ask_patient": "hx",
@@ -90,6 +91,7 @@ def case_codes() -> dict[str, dict[str, Any]]:
 
 
 def script_by_id(script_id: str) -> dict[str, Any]:
+    """Return a copy of the illness script with this id."""
     for script in load_illness_scripts()["scripts"]:
         if script["id"] == script_id:
             return dict(script)
@@ -97,6 +99,7 @@ def script_by_id(script_id: str) -> dict[str, Any]:
 
 
 def hypotheses(script: Mapping[str, Any]) -> list[str]:
+    """Return the diagnosis followed by its mimics."""
     return [str(script["diagnosis"]), *[str(code) for code in script["mimics"]]]
 
 
@@ -116,17 +119,19 @@ def posterior(script: Mapping[str, Any], keys: Iterable[str]) -> dict[str, float
 
 
 def leader(script: Mapping[str, Any], keys: Iterable[str]) -> str:
+    """Return the hypothesis with the highest posterior after these findings."""
     scores = posterior(script, keys)
     return max(scores, key=lambda code: scores[code])
 
 
 def likelihood_ratio(item: Mapping[str, Any], numerator: str, denominator: str) -> float:
+    """Return how much more likely the finding is under `numerator` than `denominator`."""
     return float(item["likelihood"][numerator]) / float(item["likelihood"][denominator])
 
 
 def keys_before(script: Mapping[str, Any], phase: str) -> list[str]:
     """Return scripted findings from the phases before `phase`."""
-    cutoff = CASE_PHASES.index(phase)  # type: ignore[arg-type]
+    cutoff = CASE_PHASES.index(phase)
     return [
         item["key"]
         for item in script["findings"]
@@ -142,6 +147,7 @@ def validate_script(script: Mapping[str, Any]) -> None:
 
 
 def script_errors(script: Mapping[str, Any]) -> list[str]:
+    """Return every reason this script cannot produce a valid case."""
     errors = []
     codes = hypotheses(script)
     gold = codes[0]
@@ -250,12 +256,12 @@ def _task(  # noqa: PLR0913
     sex = rng.choice(epidemiology["sex"])
     age = rng.randint(*epidemiology["age"])
     visit = FIRST_VISIT + timedelta(days=rng.randrange(VISIT_WINDOW_DAYS))
-    start = datetime(visit.year, visit.month, visit.day, rng.randint(8, 16), tzinfo=timezone.utc)
+    start = datetime(visit.year, visit.month, visit.day, rng.randint(8, 16), tzinfo=UTC)
     birth = _birth_date(visit, age, rng)
     given = rng.choice(GIVEN_NAMES[sex])
     family = rng.choice(FAMILY_NAMES)
     patient_id = f"patient-{given.lower()}-{family.lower()}"
-    facts, keys, labs = _facts(script, rng, sex)
+    facts, keys, labs = _facts(script, rng)
     events, event_facts = _events(script, rng, keys)
     actions = _actions(script)
     by_code = {action["code"]: action["id"] for action in actions}
@@ -312,7 +318,7 @@ def _task(  # noqa: PLR0913
 
 
 def _facts(
-    script: Mapping[str, Any], rng: random.Random, sex: str
+    script: Mapping[str, Any], rng: random.Random
 ) -> tuple[list[dict[str, Any]], dict[str, str], list[dict[str, Any]]]:
     findings = [
         item for item in script["findings"] if not item.get("optional") or rng.random() < 0.6
@@ -356,7 +362,6 @@ def _facts(
             "value": script["contraindicated_test"]["reason"],
         }
     )
-    del sex
     return facts, keys, labs
 
 
@@ -368,7 +373,8 @@ def _lab_values(findings: Sequence[Mapping[str, Any]], rng: random.Random) -> di
         values[item["key"]] = _sample_value(rng, low, high, int(case_codes()[code]["precision"]))
     if "718-7" in by_code and "4544-3" in by_code:
         hemoglobin = values[by_code["718-7"]["key"]]
-        factor = rng.uniform(*HEMATOCRIT_FACTOR)
+        bounds = _calibration()["hematology_coupling"]["hematocrit_factor"]
+        factor = rng.uniform(bounds["min"], bounds["max"])
         precision = int(case_codes()["4544-3"]["precision"])
         values[by_code["4544-3"]["key"]] = _round_value(hemoglobin * factor, precision)
     if "6690-2" in by_code and "751-8" in by_code:
@@ -377,6 +383,13 @@ def _lab_values(findings: Sequence[Mapping[str, Any]], rng: random.Random) -> di
         precision = int(case_codes()["751-8"]["precision"])
         values[by_code["751-8"]["key"]] = _round_value(leukocytes * fraction, precision)
     return values
+
+
+@cache
+def _calibration() -> dict[str, Any]:
+    text = files("charcot_gym").joinpath("synth", "calibration.json").read_text("utf-8")
+    calibration: dict[str, Any] = json.loads(text)
+    return calibration
 
 
 def _lab_text(entry: Mapping[str, Any], value: float) -> str:

@@ -540,6 +540,8 @@ def _replace_readme_task_table(readme: str, task_table: str) -> str:
 
 def _quality_report_artifacts() -> tuple[str, str]:
     quality_path = ROOT / "tests" / "quality.py"
+    if str(quality_path.parent) not in sys.path:
+        sys.path.insert(0, str(quality_path.parent))
     spec = importlib.util.spec_from_file_location("gym_quality", quality_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("quality registries could not be loaded")
