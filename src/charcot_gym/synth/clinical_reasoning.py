@@ -11,6 +11,7 @@ from functools import cache
 from importlib.resources import files
 from typing import Any
 
+from charcot_gym.clinical_case import ACTION_MINUTES
 from charcot_gym.synth.lab_values import _format_value, _round_value, _sample_value
 from charcot_gym.task import CASE_PHASES, PUBLIC_CANARY
 
@@ -21,6 +22,9 @@ VERIFIER = "clinical_reasoning"
 MAX_STEPS = 60
 DISCRIMINATING_LR = 2.0
 NEUTRAL_LR = 1.25
+# An event due by the cheapest action's clock arrives before any finding can change the
+# presentation leader it refutes.
+EVENT_DEADLINE = min(ACTION_MINUTES.values())
 # Most scripted CBCs come from infections or marrow disease, so neutrophils sit above the
 # calibrated outpatient fraction while staying below the white-cell count.
 NEUTROPHIL_FRACTION = (0.7, 0.85)
@@ -171,6 +175,8 @@ def script_errors(script: Mapping[str, Any]) -> list[str]:
     if not script["events"]:
         errors.append("no temporal events")
     for event in script["events"]:
+        if event["phase"] != "history" or max(event["at"]) > EVENT_DEADLINE:
+            errors.append(f"{event['key']}: must arrive with the first action after presentation")
         before = leader(script, keys_before(script, event["phase"]))
         if before not in event["refutes"] or before == gold:
             errors.append(f"{event['key']}: does not refute the leading hypothesis {before}")
@@ -371,18 +377,39 @@ def _lab_values(findings: Sequence[Mapping[str, Any]], rng: random.Random) -> di
     for code, item in sorted(by_code.items()):
         low, high = item["lab"]["range"]
         values[item["key"]] = _sample_value(rng, low, high, int(case_codes()[code]["precision"]))
-    if "718-7" in by_code and "4544-3" in by_code:
-        hemoglobin = values[by_code["718-7"]["key"]]
-        bounds = _calibration()["hematology_coupling"]["hematocrit_factor"]
-        factor = rng.uniform(bounds["min"], bounds["max"])
-        precision = int(case_codes()["4544-3"]["precision"])
-        values[by_code["4544-3"]["key"]] = _round_value(hemoglobin * factor, precision)
-    if "6690-2" in by_code and "751-8" in by_code:
-        leukocytes = values[by_code["6690-2"]["key"]]
-        fraction = rng.uniform(*NEUTROPHIL_FRACTION)
-        precision = int(case_codes()["751-8"]["precision"])
-        values[by_code["751-8"]["key"]] = _round_value(leukocytes * fraction, precision)
+    hematocrit = _calibration()["hematology_coupling"]["hematocrit_factor"]
+    for base, dependent, ratio in (
+        ("718-7", "4544-3", (hematocrit["min"], hematocrit["max"])),
+        ("6690-2", "751-8", NEUTROPHIL_FRACTION),
+    ):
+        if base in by_code and dependent in by_code:
+            values[by_code[base]["key"]], values[by_code[dependent]["key"]] = _coupled_pair(
+                by_code[base], by_code[dependent], ratio, rng
+            )
     return values
+
+
+def _coupled_pair(
+    base: Mapping[str, Any],
+    dependent: Mapping[str, Any],
+    ratio: tuple[float, float],
+    rng: random.Random,
+) -> tuple[float, float]:
+    """Sample a base result and a dependent one coupled to it, both inside their ranges."""
+    base_low, base_high = base["lab"]["range"]
+    low, high = dependent["lab"]["range"]
+    base_precision = int(case_codes()[base["lab"]["code"]]["precision"])
+    precision = int(case_codes()[dependent["lab"]["code"]]["precision"])
+    for _ in range(1_000):
+        value = float(_sample_value(rng, base_low, base_high, base_precision))
+        factor_low = max(ratio[0], low / value)
+        factor_high = min(ratio[1], high / value)
+        if factor_low > factor_high:
+            continue
+        coupled = float(_round_value(value * rng.uniform(factor_low, factor_high), precision))
+        if low <= coupled <= high:
+            return value, coupled
+    raise ValueError(f"{dependent['key']}: no value fits both its range and the coupling")
 
 
 @cache
