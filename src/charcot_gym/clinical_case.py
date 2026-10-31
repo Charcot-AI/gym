@@ -62,6 +62,13 @@ def order_cost(case: ClinicalCase, code: str) -> float:
     return UNLISTED_TEST_COST_USD
 
 
+def orderable(case: ClinicalCase, code: str) -> bool:
+    """Whether `order_test` accepts a code: listed in the case or in the bundled catalog."""
+    return any(
+        action.tool == "order_test" and action.code == code for action in case.actions
+    ) or any(entry["code"] == code for entry in _bundled_codes())
+
+
 class CaseError(ValueError):
     """An action the case rules reject."""
 

@@ -12,6 +12,7 @@ from charcot_gym.clinical_case import (
     clinical_topics,
     necessary_facts,
     order_cost,
+    orderable,
 )
 from charcot_gym.env import ToolCall
 from charcot_gym.fhir_store import FHIRStore
@@ -449,7 +450,8 @@ def _intervene(case: ClinicalCase, action_id: str) -> ToolCall:
 
 
 def _cheapest_order(case: ClinicalCase, codes: tuple[str, ...]) -> str:
-    return min(codes, key=lambda code: (order_cost(case, code), codes.index(code)))
+    candidates = [code for code in codes if orderable(case, code)] or list(codes)
+    return min(candidates, key=lambda code: (order_cost(case, code), codes.index(code)))
 
 
 def _assessment(
