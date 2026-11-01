@@ -94,6 +94,12 @@ def run_episode(
             "content": (
                 f"{task.prompt}\n\nPublic task view:\n"
                 + json.dumps(task.public_view(), ensure_ascii=False, sort_keys=True)
+                + (
+                    "\n\nPresentation:\n"
+                    + json.dumps(observation.result, ensure_ascii=False, sort_keys=True)
+                    if observation.result is not None
+                    else ""
+                )
             ),
         }
     ]
