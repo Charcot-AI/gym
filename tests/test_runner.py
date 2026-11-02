@@ -664,7 +664,7 @@ def test_leaderboard_filters_partial_runs_and_outputs_selected_split(tmp_path: P
         directory.mkdir()
     base = {
         "model": "openai/example",
-        "runner_version": "1.0.0",
+        "runner_version": "1.1.0",
         "overall": {
             "mean_score": 0.75,
             "ci_95": [0.5, 1.0],

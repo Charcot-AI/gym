@@ -21,3 +21,10 @@ uv run python scripts/maintenance.py tasks --check
 uv run python scripts/maintenance.py report --check
 uv build
 ```
+
+## Publishing the Hugging Face dataset
+
+```sh
+uv run --group hf python scripts/hf_datasets.py push --public
+uv run --group hf python scripts/hf_datasets.py verify --repo charcot-ai/gym --revision v1.1.0
+```
