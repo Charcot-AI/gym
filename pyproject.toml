@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "charcot-gym"
-version = "1.0.0"
+version = "1.1.0"
 description = "A reinforcement learning environment and benchmark for clinical AI agents."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,6 +23,7 @@ charcot-gym = "charcot_gym.cli:main"
 
 [dependency-groups]
 dev = ["fastapi>=0.115", "mypy>=1.13", "Pillow==11.3.0", "pytest>=8.3", "ruff>=0.8"]
+hf = ["datasets>=3.2", "huggingface_hub>=0.26"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/charcot_gym"]
