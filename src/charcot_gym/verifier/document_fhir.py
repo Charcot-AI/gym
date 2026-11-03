@@ -12,6 +12,10 @@ from charcot_gym.verifier.contracts import Check, Score
 from charcot_gym.verifier.shared import (
     _decimal,
     _has_wrong_patient_write,
+    _list,
+    _mapping,
+    _nested_value,
+    _reference,
 )
 
 _UCUM_UNIT_FACTORS = {
@@ -43,7 +47,7 @@ class DocumentFhirVerifier:
         preexisting_ids = set(gold["preexisting_ids"])
         created = [
             resource
-            for item in final_state.get("entry", [])
+            for item in _list(final_state.get("entry"))
             if isinstance(item, dict)
             and isinstance((resource := item.get("resource")), dict)
             and resource.get("resourceType") == "Observation"
@@ -92,10 +96,9 @@ class DocumentFhirVerifier:
         )
         wrong_patient = _has_wrong_patient_write(trajectory, patient_id)
         update_ids = {
-            record.get("action", {}).get("arguments", {}).get("id")
+            _nested_value(_mapping(record).get("action"), "arguments", "id")
             for record in trajectory
-            if isinstance(record.get("action"), dict)
-            and record["action"].get("name") == "fhir_update"
+            if _mapping(_mapping(record).get("action")).get("name") == "fhir_update"
         }
         correction = gold.get("correction_update")
         allowed_updates = {correction["id"]} if correction else set()
@@ -106,7 +109,7 @@ class DocumentFhirVerifier:
             updated_resource = next(
                 (
                     item["resource"]
-                    for item in final_state.get("entry", [])
+                    for item in _list(final_state.get("entry"))
                     if isinstance(item, dict)
                     and isinstance(item.get("resource"), dict)
                     and item["resource"].get("id") == correction["id"]
@@ -125,7 +128,7 @@ class DocumentFhirVerifier:
             correction_duplicate = any(
                 any(
                     isinstance(coding, dict) and coding.get("code") == correction["code"]
-                    for coding in resource.get("code", {}).get("coding", [])
+                    for coding in _list(_nested_value(resource, "code", "coding"))
                 )
                 and str(resource.get("effectiveDateTime", "")).split("T", 1)[0]
                 == correction["effective"]
@@ -231,15 +234,17 @@ def _document_match(
     patient_id: str,
     hard_task: bool = False,
 ) -> bool:
-    coding = resource.get("code", {}).get("coding", [])
+    resource = _mapping(resource)
+    coding = _list(_nested_value(resource, "code", "coding"))
     expected_code = expected.get("value_code")
     if expected_code is not None:
         value_concept = resource.get("valueCodeableConcept")
-        result_matches = isinstance(value_concept, dict) and any(
+        value_concept = _mapping(value_concept)
+        result_matches = any(
             isinstance(item, dict)
             and item.get("system") == expected.get("value_system")
             and item.get("code") == expected_code
-            for item in value_concept.get("coding", [])
+            for item in _list(value_concept.get("coding"))
         )
     else:
         quantity = resource.get("valueQuantity")
@@ -265,7 +270,7 @@ def _document_match(
             for item in coding
         )
         and result_matches
-        and resource.get("subject", {}).get("reference") == f"Patient/{patient_id}"
+        and _reference(resource.get("subject")) == f"Patient/{patient_id}"
         and effective == expected.get("effective")
         and (
             expected.get("interpretation") is None
@@ -276,9 +281,9 @@ def _document_match(
                     and item.get("system")
                     == "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"
                     and item.get("code") == expected.get("interpretation")
-                    for item in interpretation.get("coding", [])
+                    for item in _list(interpretation.get("coding"))
                 )
-                for interpretation in resource.get("interpretation", [])
+                for interpretation in _list(resource.get("interpretation"))
             )
         )
     )
@@ -304,7 +309,8 @@ def _quantity_matches(quantity: Mapping[str, Any], expected: Mapping[str, Any]) 
 
 
 def _document_result_match(resource: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
-    coding = resource.get("code", {}).get("coding", [])
+    resource = _mapping(resource)
+    coding = _list(_nested_value(resource, "code", "coding"))
     quantity = resource.get("valueQuantity")
     if resource.get("resourceType") != "Observation" or not isinstance(quantity, dict):
         return False

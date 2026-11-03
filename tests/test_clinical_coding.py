@@ -148,6 +148,40 @@ def test_condition_fields_are_required(mutation: str) -> None:
     assert environment.score().value == 0.0
 
 
+@pytest.mark.parametrize("field", ["encounter", "subject", "code"])
+def test_malformed_condition_fields_score_as_non_matches(field: str) -> None:
+    task = next(task for task in coding_tasks() if len(task.gold["expected_codes"]) == 1)
+    condition = condition_for(task, task.gold["expected_codes"][0])
+    condition[field] = {
+        "encounter": [],
+        "subject": "Patient/malformed",
+        "code": [],
+    }[field]
+    environment = ClinicalEnv([task])
+    environment.reset(task.id)
+    environment.step(ToolCall(name="fhir_create", arguments={"resource": condition}))
+    environment.step(Submit(answer=None))
+    score = environment.score()
+    assert score.value == 0.0
+    assert not score.passed
+
+
+def test_valid_condition_score_is_unchanged() -> None:
+    task = next(task for task in coding_tasks() if len(task.gold["expected_codes"]) == 1)
+    environment = ClinicalEnv([task])
+    environment.reset(task.id)
+    environment.step(
+        ToolCall(
+            name="fhir_create",
+            arguments={
+                "resource": condition_for(task, task.gold["expected_codes"][0]),
+            },
+        )
+    )
+    environment.step(Submit(answer=None))
+    assert environment.score().value == 1.0
+
+
 def test_wrong_patient_and_preexisting_modification_gates_score_zero() -> None:
     task = coding_tasks()[0]
     environment = ClinicalEnv([task])

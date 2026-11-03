@@ -23,6 +23,7 @@ from charcot_gym.clinical_case import (
 )
 from charcot_gym.task import CASE_PHASES, CaseFact, CasePhase, ClinicalCase, RubricItem, Task
 from charcot_gym.verifier.contracts import Check, Score
+from charcot_gym.verifier.shared import _list, _mapping, _reference
 
 RubricGrade = Literal[0, 1, 2]
 BOSS = CASE_PHASES[-1]
@@ -114,12 +115,20 @@ class _Assessment:
 
     @property
     def hypotheses(self) -> list[Mapping[str, Any]]:
-        return [item for item in self.arguments.get("differential", []) if isinstance(item, dict)]
+        return [
+            item for item in _list(self.arguments.get("differential")) if isinstance(item, Mapping)
+        ]
 
     def ranked(self) -> list[str]:
         """Codes still in play, ordered by declared rank and then by position."""
         alive = [
-            (item.get("rank") or len(self.hypotheses) + 1, index, str(item.get("code")))
+            (
+                item.get("rank")
+                if isinstance(item.get("rank"), int) and not isinstance(item.get("rank"), bool)
+                else len(self.hypotheses) + 1,
+                index,
+                str(item.get("code")),
+            )
             for index, item in enumerate(self.hypotheses)
             if item.get("status") != "refuted"
         ]
@@ -130,11 +139,17 @@ class _Assessment:
 
     def cited(self) -> set[str]:
         cited: set[str] = set()
-        for finding in self.arguments.get("findings", []):
-            cited |= set(finding.get("facts", []))
+        for finding in _list(self.arguments.get("findings")):
+            if isinstance(finding, Mapping):
+                cited.update(_string_values(finding.get("facts")))
         for item in self.hypotheses:
-            cited |= set(item.get("for", [])) | set(item.get("against", []))
+            cited.update(_string_values(item.get("for")))
+            cited.update(_string_values(item.get("against")))
         return cited
+
+
+def _string_values(value: Any) -> list[str]:
+    return [item for item in _list(value) if isinstance(item, str)]
 
 
 @dataclass
@@ -246,7 +261,10 @@ class ClinicalReasoningVerifier:
                 passed=replay.death is None,
                 detail="Episode ended alive."
                 if replay.death is None
-                else f"Episode ended by {replay.death['reason']}: {replay.death.get('detail')}.",
+                else (
+                    f"Episode ended by {_mapping(replay.death).get('reason', 'unknown')}: "
+                    f"{_mapping(replay.death).get('detail')}."
+                ),
             ),
             Check(
                 name="assessment_chain",
@@ -309,18 +327,19 @@ class ClinicalReasoningVerifier:
 def _replay(case: ClinicalCase, trajectory: Sequence[Mapping[str, Any]]) -> _Replay:
     replay = _Replay()
     asked: list[str] = []
-    for step, record in enumerate(trajectory):
-        action = record.get("action") or {}
-        info = record.get("info") or {}
-        state = info.get("case") or {}
+    for step, raw_record in enumerate(trajectory):
+        record = _mapping(raw_record)
+        action = _mapping(record.get("action"))
+        info = _mapping(record.get("info"))
+        state = _mapping(info.get("case"))
         ok = "error" not in info and action.get("type") == "tool"
         name = action.get("name")
-        arguments = action.get("arguments") or {}
+        arguments = _mapping(action.get("arguments"))
         if ok and name != "record_assessment" and isinstance(name, str):
             window = replay.windows.setdefault(len(replay.assessments), _Window())
             window.actions.append(AgentAction(name, dict(arguments)))
             if name == "ask_patient":
-                topics = tuple(state.get("asked_topics", [])[len(asked) :])
+                topics = tuple(_string_values(state.get("asked_topics"))[len(asked) :])
                 question = PatientQuestion(str(arguments.get("question", "")), topics)
                 window.questions.append(question)
         if ok and name == "record_assessment" and len(replay.assessments) < len(CASE_PHASES):
@@ -333,14 +352,14 @@ def _replay(case: ClinicalCase, trajectory: Sequence[Mapping[str, Any]]) -> _Rep
                     performed=tuple(replay.performed),
                 )
             )
-        elif ok and name in ACQUISITION_TOOLS:
+        elif ok and isinstance(name, str) and name in ACQUISITION_TOOLS:
             if not replay.assessments:
                 replay.early_acquisitions += 1
             keys: tuple[str, ...]
             if name == "ask_patient":
-                keys = tuple(state.get("asked_topics", [])[len(asked) :])
+                keys = tuple(_string_values(state.get("asked_topics"))[len(asked) :])
             elif name == "examine":
-                keys = tuple(dict.fromkeys(arguments.get("systems", [])))
+                keys = tuple(dict.fromkeys(_string_values(arguments.get("systems"))))
             elif name == "order_test":
                 keys = (str(arguments.get("code")),)
             else:
@@ -349,13 +368,20 @@ def _replay(case: ClinicalCase, trajectory: Sequence[Mapping[str, Any]]) -> _Rep
         elif ok and name == "intervene":
             replay.interventions.append((len(replay.acquisitions), str(arguments.get("code"))))
         if state:
-            asked = list(state.get("asked_topics", asked))
-            replay.performed = list(state.get("performed", replay.performed))
-            for fact in state.get("revealed", []):
+            asked_topics = state.get("asked_topics", asked)
+            performed = state.get("performed", replay.performed)
+            revealed = state.get("revealed", replay.revealed)
+            asked = _string_values(asked_topics) if isinstance(asked_topics, list) else asked
+            replay.performed = (
+                _string_values(performed) if isinstance(performed, list) else replay.performed
+            )
+            for fact in _string_values(state.get("revealed")):
                 replay.first_seen.setdefault(fact, step)
-            replay.revealed = set(state.get("revealed", replay.revealed))
+            replay.revealed = (
+                set(_string_values(revealed)) if isinstance(revealed, list) else replay.revealed
+            )
         if replay.death is None and info.get("death"):
-            replay.death = info["death"]
+            replay.death = dict(_mapping(info.get("death")))
             closing = ok and name == "record_assessment"
             replay.death_phase = len(replay.assessments) - closing
     return replay
@@ -573,8 +599,8 @@ def _boss(
     plan_items = 0
     if final is not None:
         planned = {
-            str((item.get("code") or {}).get("code"))
-            for item in final.arguments.get("plan", [])
+            str(_mapping(_mapping(item).get("code")).get("code"))
+            for item in _list(_mapping(final.arguments).get("plan"))
             if isinstance(item, dict)
         }
         done = {code for _, code in replay.interventions}
@@ -682,7 +708,7 @@ def _gates(case: ClinicalCase, replay: _Replay) -> list[tuple[str, float, str]]:
 def _chained(final_state: Mapping[str, Any]) -> bool:
     impressions = [
         entry["resource"]
-        for entry in final_state.get("entry", [])
+        for entry in _list(final_state.get("entry"))
         if isinstance(entry, dict)
         and isinstance(entry.get("resource"), dict)
         and entry["resource"].get("resourceType") == "ClinicalImpression"
@@ -690,7 +716,7 @@ def _chained(final_state: Mapping[str, Any]) -> bool:
     if not impressions:
         return False
     for index, impression in enumerate(impressions):
-        previous = (impression.get("previous") or {}).get("reference")
+        previous = _reference(impression.get("previous"))
         expected = None if index == 0 else f"ClinicalImpression/{impressions[index - 1].get('id')}"
         if previous != expected:
             return False
