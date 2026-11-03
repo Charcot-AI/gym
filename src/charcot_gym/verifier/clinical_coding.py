@@ -19,7 +19,13 @@ from charcot_gym.verifier.contracts import (
     Check,
     Score,
 )
-from charcot_gym.verifier.shared import _has_wrong_patient_write, _updates_preexisting
+from charcot_gym.verifier.shared import (
+    _has_wrong_patient_write,
+    _list,
+    _mapping,
+    _reference,
+    _updates_preexisting,
+)
 
 
 class ClinicalCodingVerifier:
@@ -40,7 +46,7 @@ class ClinicalCodingVerifier:
         preexisting_ids = set(gold["preexisting_ids"])
         created = [
             resource
-            for item in final_state.get("entry", [])
+            for item in _list(final_state.get("entry"))
             if isinstance(item, dict)
             and isinstance((resource := item.get("resource")), dict)
             and resource.get("resourceType") == "Condition"
@@ -89,7 +95,7 @@ class ClinicalCodingVerifier:
                 for forbidden in forbidden_codes
             )
             for resource in created
-            for coding in resource.get("code", {}).get("coding", [])
+            for coding in _list(_nested_code_coding(resource))
         )
         checks.extend(
             [
@@ -133,10 +139,11 @@ class ClinicalCodingVerifier:
 def _condition_match(
     resource: Mapping[str, Any], code: str, patient_id: str, encounter_id: str
 ) -> bool:
-    coding = resource.get("code", {}).get("coding", [])
+    resource = _mapping(resource)
+    coding = _list(_nested_code_coding(resource))
     return (
-        resource.get("subject", {}).get("reference") == f"Patient/{patient_id}"
-        and resource.get("encounter", {}).get("reference") == f"Encounter/{encounter_id}"
+        _reference(resource.get("subject")) == f"Patient/{patient_id}"
+        and _reference(resource.get("encounter")) == f"Encounter/{encounter_id}"
         and any(
             isinstance(item, dict)
             and item.get("system") == ICD10CM_SYSTEM_URI
@@ -161,6 +168,10 @@ def _condition_match(
     )
 
 
+def _nested_code_coding(resource: Mapping[str, Any]) -> Any:
+    return _mapping(resource.get("code")).get("coding")
+
+
 def _has_status_coding(value: Any, system: str, code: str) -> bool:
     codings = value if isinstance(value, list) else [value]
     return any(
@@ -169,7 +180,7 @@ def _has_status_coding(value: Any, system: str, code: str) -> bool:
             isinstance(coding, dict)
             and coding.get("system") == system
             and coding.get("code") == code
-            for coding in item.get("coding", [])
+            for coding in _list(item.get("coding"))
         )
         for item in codings
     )
