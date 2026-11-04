@@ -226,6 +226,26 @@ def test_noop_is_scored_zero_and_api_failure_is_errored() -> None:
     assert failed.turns == 1 and failed.tool_calls == 0 and failed.providers == []
 
 
+@pytest.mark.parametrize("answer", ['{"codes": ["E11.9"]}', ["x"]])
+def test_non_object_tool_submit_answers_are_scored_as_empty(answer: Any) -> None:
+    task = task_for("clinical_coding")
+    config = ModelConfig(model="fake")
+    empty = run_episode(
+        task,
+        config,
+        client=MultiTurnClient([([("submit", {})], "router-test")]),
+    )
+    malformed = run_episode(
+        task,
+        config,
+        client=MultiTurnClient([([("submit", {"answer": answer})], "router-test")]),
+    )
+
+    assert empty.status == "scored" and empty.score is not None
+    assert malformed.status == "scored" and malformed.score is not None
+    assert malformed.score.value == empty.score.value
+
+
 def test_http_timeout_marks_episode_errored_and_continues(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     transport = HangOnceTransport()

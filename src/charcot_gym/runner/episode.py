@@ -173,7 +173,8 @@ def run_episode(
                     except json.JSONDecodeError:
                         arguments = {}
                 if name == "submit":
-                    result = env.step(Submit(answer=arguments.get("answer")))
+                    answer = arguments.get("answer") if isinstance(arguments, dict) else None
+                    result = env.step(Submit(answer=answer if isinstance(answer, dict) else None))
                 else:
                     result = env.step(ToolCall(name=name, arguments=arguments))
                 tool_result = result.observation.result
