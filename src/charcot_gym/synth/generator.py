@@ -28,6 +28,7 @@ from charcot_gym.synth.lab_generation import (
     _HistoryContext,
     _validate_generated_values,
 )
+from charcot_gym.synth.metadata import with_variant_group
 from charcot_gym.terminology import (
     CONDITION_CLINICAL_SYSTEM_URI,
     ICD10CM_SYSTEM_URI,
@@ -63,6 +64,7 @@ def generate_task_sets(
     private_seed: int,
     *,
     family: str = "document_fhir",
+    public_seed: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Build one public and held-out family set from checked-in configuration."""
     if family == "claims":
@@ -80,15 +82,17 @@ def generate_task_sets(
             entry["precision"] = parameters["precision"]
     coding = _read_json(Path(__file__).with_name("clinical_coding.json"))
     generation_data = _GenerationData(calibration, scenarios, analytes, coding)
+    if public_seed is None:
+        public_seed = int(calibration["public_seed"])
     public_scenarios, private_scenarios = _stratified_scenario_choices(
         scenarios,
         calibration,
-        int(calibration["public_seed"]),
+        public_seed,
         private_seed,
     )
     public = _generate_split(
         "public",
-        int(calibration["public_seed"]),
+        public_seed,
         generation_data,
         public_scenarios,
         family,
@@ -100,7 +104,10 @@ def generate_task_sets(
         private_scenarios,
         family,
     )
-    return public, private
+    return (
+        [with_variant_group(task) for task in public],
+        [with_variant_group(task) for task in private],
+    )
 
 
 def _stratified_scenario_choices(

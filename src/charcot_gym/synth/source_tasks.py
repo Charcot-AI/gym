@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import date
 from typing import Any
 
+from charcot_gym.synth.metadata import with_variant_group
 from charcot_gym.synth.source_formats import LEVEL_FORMATS, LabReport, build_facts, render_report
 from charcot_gym.synth.source_formats.facts import preliminary_report
 from charcot_gym.synth.source_formats.rendering import impossible_result
@@ -23,7 +24,7 @@ def generate_source_tasks(seed: int, *, split: str = "public") -> list[dict[str,
                 task_seed = seed + len(tasks)
                 facts = build_facts(task_seed)
                 tasks.append(_task(facts, level, format, split, len(tasks) + 1, task_seed))
-    return tasks
+    return [with_variant_group(task) for task in tasks]
 
 
 def _expected(facts: LabReport) -> list[dict[str, Any]]:

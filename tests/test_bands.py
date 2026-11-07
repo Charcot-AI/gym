@@ -112,13 +112,45 @@ def test_skeleton_hash_is_stable_and_ignores_seed_values():
 
 def test_duplicate_rate_and_overlap():
     base = TASKS["document-fhir-public-001"]
-    copy = _variant(base, id="copy", seed=99)
+    copy = _variant(
+        base,
+        id="copy",
+        seed=99,
+        metadata={**base.metadata, "variant_group": "document_fhir:different"},
+    )
     other = TASKS["claims-hard-public-001"]
 
     assert duplicate_rate([base, copy, other]) == pytest.approx(2 / 3)
     assert duplicate_rate([base, other]) == 0.0
     assert skeleton_overlap([base, other], [copy]) == {skeleton_hash(base)}
     assert skeleton_overlap([other], [copy]) == frozenset()
+
+
+def test_duplicate_rate_exempts_same_variant_group():
+    base = TASKS["document-fhir-public-001"]
+    first = _variant(base, metadata={**base.metadata, "variant_group": "document_fhir:scenario"})
+    second = _variant(first, id="copy", seed=first.seed + 1)
+
+    assert duplicate_rate([first, second]) == 0.0
+
+
+@pytest.mark.parametrize("variant_group", ["document_fhir:other", None])
+def test_duplicate_rate_counts_different_or_missing_variant_groups(variant_group):
+    base = TASKS["document-fhir-public-001"]
+    first = _variant(base, metadata={**base.metadata, "variant_group": "document_fhir:scenario"})
+    metadata = dict(first.metadata)
+    if variant_group is None:
+        metadata.pop("variant_group")
+    else:
+        metadata["variant_group"] = variant_group
+    second = _variant(
+        first,
+        id="copy",
+        seed=first.seed + 1,
+        metadata=metadata,
+    )
+
+    assert duplicate_rate([first, second]) == 1.0
 
 
 def test_dedup_fails_above_limit():
@@ -129,13 +161,19 @@ def test_dedup_fails_above_limit():
     ]
     distinct = list({skeleton_hash(task): task for task in unique}.values())[:20]
 
-    private = _variant(base, id="private-copy", split="private")
-
     assert dedup_findings([*distinct, base]) == []
-    assert dedup_findings([*distinct, base, _variant(base, id="copy")]) == [
+    copy = _variant(
+        base,
+        id="copy",
+        metadata={key: value for key, value in base.metadata.items() if key != "variant_group"},
+    )
+    assert dedup_findings([*distinct, base, copy]) == [
         "public: 9.1% of 22 tasks share a skeleton (limit 5%)"
     ]
-    assert dedup_findings([*distinct, base, private]) == ["private and public share 1 skeletons"]
+    same_group_private = _variant(base, id="private-copy", split="private")
+    assert dedup_findings([*distinct, base, same_group_private]) == [
+        "private and public share 1 skeletons"
+    ]
 
 
 def test_report_band_and_skeleton_sections():
@@ -154,9 +192,9 @@ def test_report_band_and_skeleton_sections():
         "| `document_fhir` | uncalibrated | f2 | 1 |",
     ]
     assert maintenance._skeleton_lines([*tasks, _variant(base, id="third")]) == [
-        "| Split | Tasks | Duplicated | Rate |",
-        "| --- | ---: | ---: | ---: |",
-        "| public | 4 | 2 | 0.500 |",
+        "| Split | Tasks | Duplicated | Rate | Raw rate |",
+        "| --- | ---: | ---: | ---: | ---: |",
+        "| public | 4 | 0 | 0.000 | 0.500 |",
         "",
         "Limit: 0.050 per split.",
     ]

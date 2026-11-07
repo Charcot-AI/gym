@@ -26,6 +26,7 @@ SUPPORTED_TYPES = {
     "ClaimResponse",
     "Claim",
     "Task",
+    "ClinicalImpression",
 }
 REFERENCE_PATTERN = re.compile(r"^([A-Z][A-Za-z]+)/([A-Za-z0-9.-]{1,64})$")
 REQUIRED_FIELDS = {
@@ -47,6 +48,7 @@ REQUIRED_FIELDS = {
     "Communication": ("status",),
     "Provenance": ("target", "recorded"),
     "AllergyIntolerance": ("patient",),
+    "ClinicalImpression": ("status", "subject"),
 }
 PATIENT_REFERENCE_FIELDS = {
     "Observation": "subject",
@@ -64,15 +66,17 @@ PATIENT_REFERENCE_FIELDS = {
     "MedicationRequest": "subject",
     "AllergyIntolerance": "patient",
     "Communication": "subject",
+    "ClinicalImpression": "subject",
 }
 SUBJECT_SEARCH_TYPES = {
+    "ClinicalImpression",
+    "ServiceRequest",
+    "MedicationRequest",
     "Observation",
     "Condition",
     "Encounter",
     "DocumentReference",
     "MedicationAdministration",
-    "ServiceRequest",
-    "MedicationRequest",
     "Communication",
     "MedicationStatement",
     "QuestionnaireResponse",

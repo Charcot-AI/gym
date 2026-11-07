@@ -132,6 +132,7 @@ def evaluate(  # noqa: PLR0913
             "modality": modality,
             "model": config.model,
             "max_tokens": config.max_tokens,
+            "concurrency": concurrency,
             "incomplete": launched < len(tasks) * attempts,
             "launched_episode_count": launched,
             "runner_version": version("charcot-gym"),
@@ -204,6 +205,10 @@ def _episode_record(
         "task_id_hash": task_id_hash,
         "score": result.score.value if result.score else None,
         "status": result.status,
+        "wall_time_s": result.wall_time_s,
+        "turns": result.turns,
+        "tool_calls": result.tool_calls,
+        "providers": list(result.providers),
     }
     if private:
         record["failed_checks"] = (
@@ -230,7 +235,6 @@ def _episode_record(
             "scenario": str(task.metadata.get("scenario_id", "unknown")),
             "checks": [item.model_dump(mode="json") for item in checks],
             "error": result.error,
-            "wall_time_s": result.wall_time_s,
         }
     )
     path = trajectory_dir / f"{_safe_name(task.id)}-attempt-{result.attempt}.json"
@@ -269,6 +273,11 @@ def _internal_record(result: EpisodeResult, *, private: bool, private_key: bytes
         "status": result.status,
         "usage": result.usage,
         "cost_usd": result.cost_usd,
+        "wall_time_s": result.wall_time_s,
+        "turns": result.turns,
+        "tool_calls": result.tool_calls,
+        "providers": list(result.providers),
+        "error_kind": result.error_kind,
         "checks": [item.model_dump(mode="json") for item in result.score.checks]
         if result.score
         else [],

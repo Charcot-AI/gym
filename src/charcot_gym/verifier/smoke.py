@@ -7,6 +7,7 @@ from typing import Any
 
 from charcot_gym.task import Task
 from charcot_gym.verifier.contracts import Check, Score
+from charcot_gym.verifier.shared import _list, _mapping, _nested_value, _reference
 
 
 class SmokeVerifier:
@@ -26,7 +27,7 @@ class SmokeVerifier:
         """Check the final resource state and optional search requirement."""
         resources = [
             item["resource"]
-            for item in final_state.get("entry", [])
+            for item in _list(final_state.get("entry"))
             if isinstance(item, dict)
             and isinstance(item.get("resource"), dict)
             and item["resource"].get("resourceType") == "Observation"
@@ -37,14 +38,14 @@ class SmokeVerifier:
         search_positions = [
             index
             for index, record in enumerate(trajectory)
-            if isinstance(record.get("action"), dict)
-            and record["action"].get("name") == "fhir_search"
+            if isinstance(_mapping(record).get("action"), dict)
+            and _mapping(record["action"]).get("name") == "fhir_search"
         ]
         create_positions = [
             index
             for index, record in enumerate(trajectory)
-            if isinstance(record.get("action"), dict)
-            and record["action"].get("name") == "fhir_create"
+            if isinstance(_mapping(record).get("action"), dict)
+            and _mapping(record["action"]).get("name") == "fhir_create"
         ]
         search_seen = bool(search_positions) and (
             not create_positions or search_positions[0] < create_positions[0]
@@ -92,8 +93,8 @@ class SmokeVerifier:
 
 
 def _matches(resource: Mapping[str, Any], gold: Mapping[str, Any]) -> bool:
-    coding = resource.get("code", {}).get("coding", [])
-    subject = resource.get("subject", {}).get("reference")
+    resource = _mapping(resource)
+    coding = _list(_nested_value(resource, "code", "coding"))
     quantity = resource.get("valueQuantity")
     return (
         resource.get("resourceType") == gold.get("resource_type")
@@ -108,5 +109,5 @@ def _matches(resource: Mapping[str, Any], gold: Mapping[str, Any]) -> bool:
         and quantity.get("unit") == gold.get("unit")
         and quantity.get("code") == gold.get("unit")
         and quantity.get("system") == gold.get("unit_system")
-        and subject == f"Patient/{gold.get('patient_id')}"
+        and _reference(resource.get("subject")) == f"Patient/{gold.get('patient_id')}"
     )

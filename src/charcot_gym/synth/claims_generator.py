@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from charcot_gym.synth.generator import generate_task_sets
+from charcot_gym.synth.metadata import with_variant_group
 from charcot_gym.terminology import (
     ICD10CM_SYSTEM_URI,
     LOINC_SYSTEM_URI,
@@ -62,9 +63,12 @@ def generate_claim_task_sets(
     private_seed: int,
     *,
     public_seed: int | None = None,
+    source_public_seed: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Create the claims set by augmenting the shared scenario resources."""
-    public_source, private_source = generate_task_sets(private_seed, family="document_fhir")
+    public_source, private_source = generate_task_sets(
+        private_seed, family="document_fhir", public_seed=source_public_seed
+    )
     config = _read_json(HERE / "claims.json")
     healthplans = [
         plan for plan in _read_json(HERE / "healthplans.json")["plans"] if not plan.get("hard_only")
@@ -128,7 +132,10 @@ def generate_claim_task_sets(
                 )
             )
         outputs.append(tasks)
-    return outputs[0], outputs[1]
+    return (
+        [with_variant_group(task) for task in outputs[0]],
+        [with_variant_group(task) for task in outputs[1]],
+    )
 
 
 def _convert_task(  # noqa: PLR0913, PLR0917

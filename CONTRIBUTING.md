@@ -22,7 +22,6 @@ uv run python scripts/maintenance.py report --check
 uv run python scripts/maintenance.py bands --check
 uv build
 ```
-
 ## Browser tests
 
 Install the development group and Chromium before running browser tests:
@@ -60,7 +59,6 @@ Build the public Parquet dataset locally, then push a private Hub dataset with
 revision with:
 
 ```sh
-uv run python scripts/hf_datasets.py build --out dist/hf-dataset
-uv run python scripts/hf_datasets.py push --repo charcot-ai/gym
-uv run python scripts/hf_datasets.py verify --repo charcot-ai/gym --revision v0.1.0
+uv run --group hf python scripts/hf_datasets.py push --public
+uv run --group hf python scripts/hf_datasets.py verify --repo charcot-ai/gym --revision v1.1.0
 ```

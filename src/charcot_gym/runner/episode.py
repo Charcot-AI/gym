@@ -46,6 +46,9 @@ class EpisodeResult:
     usage: dict[str, int]
     cost_usd: float
     wall_time_s: float
+    turns: int
+    tool_calls: int
+    providers: list[str]
     trajectory: list[dict[str, Any]]
     messages: list[dict[str, Any]]
     error: str | None = None
@@ -75,6 +78,9 @@ def run_episode(
             usage={"prompt_tokens": 0, "completion_tokens": 0},
             cost_usd=0.0,
             wall_time_s=time.monotonic() - started,
+            turns=0,
+            tool_calls=0,
+            providers=[],
             trajectory=[],
             messages=[],
             error="browser tasks run through charcot_gym.ehr_web.EhrWebEnv",
@@ -89,6 +95,9 @@ def run_episode(
             usage={"prompt_tokens": 0, "completion_tokens": 0},
             cost_usd=0.0,
             wall_time_s=time.monotonic() - started,
+            turns=0,
+            tool_calls=0,
+            providers=[],
             trajectory=[],
             messages=[],
             error="configured model does not support image inputs",
@@ -102,12 +111,21 @@ def run_episode(
             "content": (
                 f"{task.prompt}\n\nPublic task view:\n"
                 + json.dumps(task.public_view(), ensure_ascii=False, sort_keys=True)
+                + (
+                    "\n\nPresentation:\n"
+                    + json.dumps(observation.result, ensure_ascii=False, sort_keys=True)
+                    if observation.result is not None
+                    else ""
+                )
             ),
         }
     ]
     tools = [*observation.tools, SUBMIT_SCHEMA]
     usage = {"prompt_tokens": 0, "completion_tokens": 0}
     cost = 0.0
+    turns = 0
+    tool_call_count = 0
+    providers: list[str] = []
     chat = client or OpenAIChatClient(config)
     status = "scored"
     error: str | None = None
@@ -118,9 +136,11 @@ def run_episode(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ChatTimeoutError("episode deadline exceeded")
+            turns += 1
             response = chat.complete(messages, tools, timeout_s=remaining)
-            if time.monotonic() >= deadline:
-                raise ChatTimeoutError("episode deadline exceeded")
+            provider = response.get("provider")
+            if isinstance(provider, str) and provider and provider not in providers:
+                providers.append(provider)
             response_usage = response.get("usage", {})
             for key, usage_key in (
                 ("prompt_tokens", "prompt_tokens"),
@@ -139,6 +159,9 @@ def run_episode(
                 ) / 1_000_000
             choice = response["choices"][0]["message"]
             tool_calls = choice.get("tool_calls") or []
+            tool_call_count += len(tool_calls)
+            if time.monotonic() >= deadline:
+                raise ChatTimeoutError("episode deadline exceeded")
             messages.append(
                 {
                     "role": "assistant",
@@ -167,7 +190,8 @@ def run_episode(
                     except json.JSONDecodeError:
                         arguments = {}
                 if name == "submit":
-                    result = env.step(Submit(answer=arguments.get("answer")))
+                    answer = arguments.get("answer") if isinstance(arguments, dict) else None
+                    result = env.step(Submit(answer=answer if isinstance(answer, dict) else None))
                 else:
                     result = env.step(ToolCall(name=name, arguments=arguments))
                 tool_result = result.observation.result
@@ -234,6 +258,9 @@ def run_episode(
         usage=usage,
         cost_usd=cost,
         wall_time_s=time.monotonic() - started,
+        turns=turns,
+        tool_calls=tool_call_count,
+        providers=providers,
         trajectory=[entry.model_dump(mode="json") for entry in env.trajectory.entries],
         messages=messages,
         error=error,

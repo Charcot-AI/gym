@@ -55,7 +55,7 @@ class ChatClient(Protocol):
         *,
         timeout_s: float | None = None,
     ) -> dict[str, Any]:
-        """Return one parsed chat-completions response."""
+        """Return one parsed response, including its optional top-level provider."""
 
 
 class OpenAIChatClient:

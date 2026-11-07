@@ -59,6 +59,11 @@ class Score(BaseModel):
     value: float = Field(ge=0, le=1)
     passed: bool
     checks: list[Check]
+    components: dict[str, float] = Field(
+        default_factory=dict,
+        exclude_if=lambda components: not components,
+        description="Named partial rewards, such as per-phase values for dense RL.",
+    )
 
 
 class Verifier(Protocol):

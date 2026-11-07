@@ -19,7 +19,13 @@ from charcot_gym.verifier.contracts import (
     Check,
     Score,
 )
-from charcot_gym.verifier.shared import _has_wrong_patient_write, _updates_preexisting
+from charcot_gym.verifier.shared import (
+    _has_wrong_patient_write,
+    _list,
+    _mapping,
+    _nested_value,
+    _updates_preexisting,
+)
 
 
 class ClaimsVerifier:
@@ -41,7 +47,7 @@ class ClaimsVerifier:
             return _authorization_balance_score(gold, final_state, trajectory, preexisting_ids)
         created = [
             item["resource"]
-            for item in final_state.get("entry", [])
+            for item in _list(final_state.get("entry"))
             if isinstance(item, dict)
             and isinstance(item.get("resource"), dict)
             and item["resource"].get("resourceType") == "Claim"
@@ -187,8 +193,8 @@ class ClaimsVerifier:
                 ),
             ]
         )
-        actual_items = claim.get("item", [])
-        expected_items = expected.get("item", [])
+        actual_items = _list(claim.get("item"))
+        expected_items = _list(expected.get("item"))
         for index, expected_item in enumerate(expected_items):
             expected_code = _product_code(expected_item, hcpcs_system_aliases)
             matching_items = [
@@ -203,8 +209,8 @@ class ClaimsVerifier:
                     item
                     for item in matching_items
                     if _decimal_equal(
-                        item.get("quantity", {}).get("value"),
-                        expected_item.get("quantity", {}).get("value"),
+                        _nested_value(item, "quantity", "value"),
+                        _nested_value(expected_item, "quantity", "value"),
                     )
                 ]
                 if quantity_matches:
@@ -231,13 +237,13 @@ class ClaimsVerifier:
                     _claim_check(
                         f"item_{index + 1}_quantity",
                         _decimal_equal(
-                            actual_item.get("quantity", {}).get("value"),
-                            expected_item.get("quantity", {}).get("value"),
+                            _nested_value(actual_item, "quantity", "value"),
+                            _nested_value(expected_item, "quantity", "value"),
                         ),
                         "Quantity matches."
                         if _decimal_equal(
-                            actual_item.get("quantity", {}).get("value"),
-                            expected_item.get("quantity", {}).get("value"),
+                            _nested_value(actual_item, "quantity", "value"),
+                            _nested_value(expected_item, "quantity", "value"),
                         )
                         else "Quantity differs.",
                     ),
@@ -435,11 +441,29 @@ class ClaimsVerifier:
 def _item_has_modifier(item: Mapping[str, Any], code: str) -> bool:
     return any(
         coding.get("code") == code
-        for modifier in item.get("modifier", [])
+        for modifier in _list(item.get("modifier"))
         if isinstance(modifier, Mapping)
-        for coding in modifier.get("coding", [])
+        for coding in _list(modifier.get("coding"))
         if isinstance(coding, Mapping)
     )
+
+
+def _modifier_codes(item: Mapping[str, Any]) -> tuple[str, ...]:
+    modifiers = item.get("modifier", [])
+    if not isinstance(modifiers, list):
+        return ("\x00",)
+    codes = []
+    for modifier in modifiers:
+        if not isinstance(modifier, Mapping):
+            return ("\x00",)
+        codings = modifier.get("coding", [])
+        if not isinstance(codings, list):
+            return ("\x00",)
+        for coding in codings:
+            if not isinstance(coding, Mapping) or not isinstance(coding.get("code"), str):
+                return ("\x00",)
+            codes.append(coding["code"])
+    return tuple(sorted(codes))
 
 
 def _modifier_lines_match(
@@ -454,26 +478,26 @@ def _modifier_lines_match(
     def signature(item: Mapping[str, Any]) -> tuple[Any, ...]:
         return (
             _product_code(item, systems),
-            item.get("quantity", {}).get("value"),
+            _nested_value(item, "quantity", "value"),
             item.get("servicedDate"),
-            tuple(
-                sorted(
-                    coding["code"]
-                    for entry in item.get("modifier", [])
-                    for coding in entry.get("coding", [])
-                )
-            ),
+            _modifier_codes(item),
         )
 
     actual = sorted(
-        signature(item)
-        for item in actual_items
-        if isinstance(item, Mapping) and _item_has_modifier(item, modifier)
+        [
+            signature(item)
+            for item in actual_items
+            if isinstance(item, Mapping) and _item_has_modifier(item, modifier)
+        ],
+        key=repr,
     )
     expected = sorted(
-        signature(item)
-        for item in expected_items
-        if isinstance(item, Mapping) and _item_has_modifier(item, modifier)
+        [
+            signature(item)
+            for item in expected_items
+            if isinstance(item, Mapping) and _item_has_modifier(item, modifier)
+        ],
+        key=repr,
     )
     return actual == expected
 
@@ -511,7 +535,7 @@ def _authorization_balance_score(
 ) -> Score:
     created = [
         resource
-        for entry in final_state.get("entry", [])
+        for entry in _list(final_state.get("entry"))
         if isinstance(entry, Mapping)
         and isinstance((resource := entry.get("resource")), Mapping)
         and resource.get("id") not in preexisting_ids
@@ -520,12 +544,12 @@ def _authorization_balance_score(
     tasks = [item for item in created if item.get("resourceType") == "Task"]
     expected = gold["authorization_task"]
     task = tasks[0] if len(tasks) == 1 else {}
-    focus = task.get("focus", {}) if isinstance(task, Mapping) else {}
-    code = task.get("code", {}) if isinstance(task, Mapping) else {}
+    focus = _mapping(task.get("focus")) if isinstance(task, Mapping) else {}
+    code = _mapping(task.get("code")) if isinstance(task, Mapping) else {}
     draft: Mapping[str, Any] = next(
         (
             entry["resource"]
-            for entry in final_state.get("entry", [])
+            for entry in _list(final_state.get("entry"))
             if isinstance(entry, Mapping)
             and isinstance(entry.get("resource"), Mapping)
             and entry["resource"].get("resourceType") == "Claim"
@@ -540,9 +564,9 @@ def _authorization_balance_score(
             "authorization_task_shape",
             task.get("status") == expected["status"]
             and task.get("intent") == expected["intent"]
-            and focus.get("reference") == expected["focus"]["reference"]
+            and focus.get("reference") == _nested_value(expected, "focus", "reference")
             and isinstance(code.get("text"), str)
-            and code["text"].strip().casefold() == "authorization update",
+            and code.get("text", "").strip().casefold() == "authorization update",
             "The authorization Task has the required workflow fields.",
         ),
         _claim_check(
@@ -569,8 +593,8 @@ def _ndc_code(item: Mapping[str, Any]) -> str | None:
     details = item.get("detail", [])
     if not isinstance(details, list) or not details:
         return None
-    product = details[0].get("productOrService", {})
-    codings = product.get("coding", []) if isinstance(product, Mapping) else []
+    product = _mapping(_mapping(details[0]).get("productOrService"))
+    codings = _list(product.get("coding"))
     values = [
         coding.get("code")
         for coding in codings
@@ -589,16 +613,24 @@ def _diagnosis_links_match_code(
     expected_items = expected_claim.get("item", [])
     if not isinstance(actual_items, list) or not isinstance(expected_items, list):
         return False
-    actual_links = sorted(
-        tuple(item.get("diagnosisSequence", []))
-        for item in actual_items
-        if isinstance(item, Mapping) and _product_code(item, systems) == code
-    )
-    expected_links = sorted(
-        tuple(item.get("diagnosisSequence", []))
-        for item in expected_items
-        if isinstance(item, Mapping) and _product_code(item, systems) == code
-    )
+
+    def links(items: list[Any]) -> list[tuple[int, ...]] | None:
+        result = []
+        for item in items:
+            if not isinstance(item, Mapping) or _product_code(item, systems) != code:
+                continue
+            sequence = item.get("diagnosisSequence")
+            if not isinstance(sequence, list) or not all(
+                isinstance(value, int) and not isinstance(value, bool) for value in sequence
+            ):
+                return None
+            result.append(tuple(sequence))
+        return sorted(result)
+
+    actual_links = links(actual_items)
+    expected_links = links(expected_items)
+    if actual_links is None or expected_links is None:
+        return False
     return bool(expected_links) and actual_links == expected_links
 
 
@@ -610,24 +642,23 @@ def _denial_error_fixed(
 ) -> bool:
     actual_items = actual_claim.get("item", [])
     expected_items = expected_claim.get("item", [])
+    if not isinstance(actual_items, list) or not isinstance(expected_items, list):
+        return False
     if error_kind == "wrong_units":
 
         def quantities(items: Any) -> list[tuple[Any, ...]]:
             return sorted(
-                (
-                    _product_code(item, systems),
-                    item.get("quantity", {}).get("value"),
-                    item.get("servicedDate"),
-                    tuple(
-                        sorted(
-                            coding["code"]
-                            for modifier in item.get("modifier", [])
-                            for coding in modifier.get("coding", [])
-                        )
-                    ),
-                )
-                for item in items
-                if isinstance(item, Mapping)
+                [
+                    (
+                        _product_code(item, systems),
+                        _nested_value(item, "quantity", "value"),
+                        item.get("servicedDate"),
+                        _modifier_codes(item),
+                    )
+                    for item in items
+                    if isinstance(item, Mapping)
+                ],
+                key=repr,
             )
 
         return quantities(actual_items) == quantities(expected_items)
@@ -643,21 +674,18 @@ def _denial_error_fixed(
 
         def prices(items: Any) -> list[tuple[Any, ...]]:
             return sorted(
-                (
-                    _product_code(item, systems),
-                    item.get("quantity", {}).get("value"),
-                    item.get("servicedDate"),
-                    item.get("unitPrice", {}).get("value"),
-                    tuple(
-                        sorted(
-                            coding["code"]
-                            for modifier in item.get("modifier", [])
-                            for coding in modifier.get("coding", [])
-                        )
-                    ),
-                )
-                for item in items
-                if isinstance(item, Mapping)
+                [
+                    (
+                        _product_code(item, systems),
+                        _nested_value(item, "quantity", "value"),
+                        item.get("servicedDate"),
+                        _nested_value(item, "unitPrice", "value"),
+                        _modifier_codes(item),
+                    )
+                    for item in items
+                    if isinstance(item, Mapping)
+                ],
+                key=repr,
             )
 
         return prices(actual_items) == prices(expected_items)
@@ -754,6 +782,7 @@ def _duplicates_forbidden_items(
     forbidden_pairs = {
         (item.get("code"), item.get("servicedDate"))
         for item in forbidden_items
+        if isinstance(item, Mapping)
         if isinstance(item.get("code"), str) and isinstance(item.get("servicedDate"), str)
     }
     actual_items = claim.get("item", [])
@@ -875,6 +904,9 @@ def _diagnosis_sequence_is_covered(
         not isinstance(prefixes, list)
         or not prefixes
         or not isinstance(sequences, list)
+        or not all(
+            isinstance(sequence, int) and not isinstance(sequence, bool) for sequence in sequences
+        )
         or not isinstance(diagnoses, list)
     ):
         return False

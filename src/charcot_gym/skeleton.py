@@ -32,7 +32,14 @@ def task_skeleton(task: Task) -> dict[str, Any]:
         layouts.extend([value] if isinstance(value, str) else value or ())
     return {
         "family": task.family,
-        "scenario_id": metadata.get("scenario_id"),
+        "scenario_id": (
+            metadata.get("scenario_id")
+            or metadata.get("template_id")
+            or metadata.get("template")
+            or metadata.get("script")
+            or metadata.get("scenario")
+            or task.id
+        ),
         "traps": sorted(traps),
         "source_format": {"modality": task.modality, "layouts": sorted(set(layouts))},
         "source_level": task.source_level,
@@ -47,7 +54,30 @@ def skeleton_hash(task: Task) -> str:
 
 
 def duplicate_rate(tasks: Iterable[Task]) -> float:
-    """Return the share of tasks whose skeleton matches another task's."""
+    """Return the share of tasks duplicated outside their declared variant group."""
+    grouped: dict[str, list[Task]] = {}
+    for task in tasks:
+        grouped.setdefault(skeleton_hash(task), []).append(task)
+    total = sum(map(len, grouped.values()))
+    duplicated = 0
+    for group in grouped.values():
+        duplicated += sum(
+            1
+            for task in group
+            if any(
+                other is not task
+                and not (
+                    task.metadata.get("variant_group")
+                    and task.metadata.get("variant_group") == other.metadata.get("variant_group")
+                )
+                for other in group
+            )
+        )
+    return duplicated / total if total else 0.0
+
+
+def raw_duplicate_rate(tasks: Iterable[Task]) -> float:
+    """Return the share of tasks whose skeleton matches any other task."""
     counts = Counter(skeleton_hash(task) for task in tasks)
     total = sum(counts.values())
     duplicated = sum(count for count in counts.values() if count > 1)
