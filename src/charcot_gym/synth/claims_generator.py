@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from charcot_gym.synth.generator import generate_task_sets
+from charcot_gym.synth.metadata import with_variant_group
 from charcot_gym.terminology import (
     ICD10CM_SYSTEM_URI,
     LOINC_SYSTEM_URI,
@@ -131,7 +132,10 @@ def generate_claim_task_sets(
                 )
             )
         outputs.append(tasks)
-    return outputs[0], outputs[1]
+    return (
+        [with_variant_group(task) for task in outputs[0]],
+        [with_variant_group(task) for task in outputs[1]],
+    )
 
 
 def _convert_task(  # noqa: PLR0913, PLR0917
@@ -317,6 +321,7 @@ def _convert_task(  # noqa: PLR0913, PLR0917
     )
     preexisting = list(source["gold"]["preexisting_ids"])
     task["family"] = "claims"
+    task.pop("source_level", None)
     task["id"] = task_id
     task["verifier"] = "claims"
     task["tools"] = list(dict.fromkeys([*task["tools"], "healthplan_rules"]))

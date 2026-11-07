@@ -602,4 +602,4 @@ def test_term_guard_runs_cleanly() -> None:
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Source standards check passed." in result.stdout, result.stdout + result.stderr

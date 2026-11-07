@@ -38,6 +38,7 @@ from charcot_gym.synth.hard_claims_resources import (
     _reprice,
 )
 from charcot_gym.synth.longitudinal import generate_longitudinal_record
+from charcot_gym.synth.metadata import with_variant_group
 from charcot_gym.terminology import (
     CLAIM_STATUS_ACTIVE,
     CLAIM_TYPE_PROFESSIONAL,
@@ -170,7 +171,10 @@ def generate_hard_claim_task_sets(
             else PACK_CYCLE
         ),
     )
-    return public, private
+    return (
+        [with_variant_group(task) for task in public],
+        [with_variant_group(task) for task in private],
+    )
 
 
 def _generate_split(

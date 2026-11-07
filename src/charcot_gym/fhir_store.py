@@ -16,12 +16,17 @@ SUPPORTED_TYPES = {
     "Organization",
     "Coverage",
     "MedicationAdministration",
+    "ServiceRequest",
+    "MedicationRequest",
+    "Communication",
+    "Provenance",
+    "AllergyIntolerance",
+    "MedicationStatement",
+    "QuestionnaireResponse",
     "ClaimResponse",
     "Claim",
     "Task",
     "ClinicalImpression",
-    "ServiceRequest",
-    "MedicationRequest",
 }
 REFERENCE_PATTERN = re.compile(r"^([A-Z][A-Za-z]+)/([A-Za-z0-9.-]{1,64})$")
 REQUIRED_FIELDS = {
@@ -33,12 +38,17 @@ REQUIRED_FIELDS = {
     "Organization": (),
     "Coverage": ("status", "beneficiary", "payor"),
     "MedicationAdministration": ("status", "medication", "subject"),
+    "MedicationStatement": ("status", "medication", "subject"),
+    "QuestionnaireResponse": ("status", "subject"),
     "ClaimResponse": ("status", "type", "use", "patient", "outcome"),
     "Claim": ("status", "type", "use", "patient"),
     "Task": ("status", "intent"),
-    "ClinicalImpression": ("status", "subject"),
-    "ServiceRequest": ("status", "intent", "subject"),
+    "ServiceRequest": ("status", "intent", "subject", "code"),
     "MedicationRequest": ("status", "intent", "medication", "subject"),
+    "Communication": ("status",),
+    "Provenance": ("target", "recorded"),
+    "AllergyIntolerance": ("patient",),
+    "ClinicalImpression": ("status", "subject"),
 }
 PATIENT_REFERENCE_FIELDS = {
     "Observation": "subject",
@@ -46,13 +56,17 @@ PATIENT_REFERENCE_FIELDS = {
     "Encounter": "subject",
     "DocumentReference": "subject",
     "MedicationAdministration": "subject",
+    "MedicationStatement": "subject",
+    "QuestionnaireResponse": "subject",
     "Coverage": "beneficiary",
     "Claim": "patient",
     "ClaimResponse": "patient",
     "Task": "for",
-    "ClinicalImpression": "subject",
     "ServiceRequest": "subject",
     "MedicationRequest": "subject",
+    "AllergyIntolerance": "patient",
+    "Communication": "subject",
+    "ClinicalImpression": "subject",
 }
 SUBJECT_SEARCH_TYPES = {
     "ClinicalImpression",
@@ -63,6 +77,9 @@ SUBJECT_SEARCH_TYPES = {
     "Encounter",
     "DocumentReference",
     "MedicationAdministration",
+    "Communication",
+    "MedicationStatement",
+    "QuestionnaireResponse",
 }
 DATE_FIELDS = {
     "Observation": (("effectiveDateTime",),),
@@ -74,6 +91,12 @@ DATE_FIELDS = {
         ("occurrenceDateTime",),
         ("effectiveDateTime",),
     ),
+    "ServiceRequest": (("authoredOn",),),
+    "MedicationRequest": (("authoredOn",),),
+    "Communication": (("sent",),),
+    "Provenance": (("recorded",),),
+    "MedicationStatement": (("effectiveDateTime",),),
+    "QuestionnaireResponse": (("authored",),),
     "Claim": (("created",),),
 }
 SUPPORTED_SEARCH_PARAMETERS = {

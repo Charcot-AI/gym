@@ -135,9 +135,26 @@ class OpenAIChatClient:
                             status = error.response.status_code
                             retryable = status == 429 or 500 <= status < 600
                             if not retryable or attempt >= self.config.retries:
+                                detail = error.response.text
+                                try:
+                                    body = error.response.json()
+                                except ValueError:
+                                    body = None
+                                if isinstance(body, dict):
+                                    server_error = body.get("error")
+                                    server_message = (
+                                        server_error.get("message")
+                                        if isinstance(server_error, dict)
+                                        else None
+                                    )
+                                    if not isinstance(server_message, str):
+                                        server_message = body.get("message")
+                                    if isinstance(server_message, str) and server_message:
+                                        detail = server_message
+                                detail = str(detail).strip()[:500]
                                 raise ChatCompletionError(
                                     "http_error",
-                                    f"chat-completions HTTP {status}",
+                                    f"chat-completions HTTP {status}: {detail}",
                                     http_status=status,
                                 ) from error
                         except httpx.TimeoutException as error:

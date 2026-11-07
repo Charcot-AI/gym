@@ -28,6 +28,7 @@ from charcot_gym.synth.lab_generation import (
     _HistoryContext,
     _validate_generated_values,
 )
+from charcot_gym.synth.metadata import with_variant_group
 from charcot_gym.terminology import (
     CONDITION_CLINICAL_SYSTEM_URI,
     ICD10CM_SYSTEM_URI,
@@ -103,7 +104,10 @@ def generate_task_sets(
         private_scenarios,
         family,
     )
-    return public, private
+    return (
+        [with_variant_group(task) for task in public],
+        [with_variant_group(task) for task in private],
+    )
 
 
 def _stratified_scenario_choices(
@@ -465,6 +469,11 @@ def _generate_split(
             {
                 "id": f"{task_family.replace('_', '-')}-{split}-{index + 1:03d}",
                 "family": task_family,
+                **(
+                    {"source_level": "f1" if layout == "narrative" else "f0"}
+                    if task_family == "document_fhir"
+                    else {}
+                ),
                 "split": split,
                 "version": "1",
                 "prompt": prompt,
