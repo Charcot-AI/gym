@@ -38,7 +38,6 @@ def task_skeleton(task: Task) -> dict[str, Any]:
             or metadata.get("template")
             or metadata.get("script")
             or metadata.get("scenario")
-            or task.id
         ),
         "traps": sorted(traps),
         "source_format": {"modality": task.modality, "layouts": sorted(set(layouts))},

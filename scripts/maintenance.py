@@ -585,9 +585,7 @@ def _skeleton_lines(tasks: list[Task]) -> list[str]:
     for split, (count, rate) in split_duplication(tasks).items():
         split_tasks = [task for task in tasks if task.split == split]
         raw_rate = raw_duplicate_rate(split_tasks)
-        lines.append(
-            f"| {split} | {count} | {round(rate * count)} | {rate:.3f} | {raw_rate:.3f} |"
-        )
+        lines.append(f"| {split} | {count} | {round(rate * count)} | {rate:.3f} | {raw_rate:.3f} |")
     lines.extend(["", f"Limit: {MAX_DUPLICATE_RATE:.3f} per split."])
     return lines
 
