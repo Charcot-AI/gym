@@ -286,10 +286,10 @@ def render_card(tasks: list[Task], *, repo_id: str, version: str) -> str:
         ")",
         "task = Task.model_validate(",
         '    {key: value for key, value in row.items() if key != "images"}',
-        (
-            '    | {key: json.loads(row[key]) for key in ("initial_state", "environment", '
-            '"gold", "case", "metadata")}'
-        ),
+        "    | {",
+        "        key: json.loads(row[key])",
+        '        for key in ("initial_state", "environment", "gold", "case", "metadata")',
+        "    }",
         ")",
         "env = ClinicalEnv([task])",
         "env.reset(task.id, seed=task.seed)",
