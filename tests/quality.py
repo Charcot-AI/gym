@@ -134,7 +134,7 @@ SCENARIOS = {
     item["id"]: item
     for item in [
         *json.loads((ROOT / "src/charcot_gym/synth/scenarios.json").read_text())["scenarios"],
-        *json.loads((ROOT / "src/charcot_gym/synth/heldout_scenarios.json").read_text())[
+        *json.loads((ROOT / "src/charcot_gym/synth/heldout_scenario_data.json").read_text())[
             "scenarios"
         ],
     ]

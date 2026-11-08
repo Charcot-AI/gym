@@ -14,9 +14,7 @@ _FEE_ROW = re.compile(
     r"^([A-Z0-9]+) fee schedule: (.+?)=(\d+(?:\.\d+)?); (.+?) onward=(\d+(?:\.\d+)?)\.$"
 )
 _HELDOUT_GROUPS = set(
-    json.loads((Path(__file__).parent / "heldout_scenarios.json").read_text(encoding="utf-8"))[
-        "variant_groups"
-    ]
+    json.loads((Path(__file__).parent / "heldout_scenarios.json").read_text(encoding="utf-8"))
 )
 
 

@@ -252,7 +252,7 @@ def test_heldout_scenario_groups_are_new():
         / "synth"
         / "heldout_scenarios.json"
     )
-    groups = set(json.loads(scenario_config.read_text())["variant_groups"])
+    groups = set(json.loads(scenario_config.read_text()))
     generated_ids = {task.id for task in TASKS.values() if "-scenario-" in task.id}
     generated_groups = {
         task.metadata.get("variant_group") for task in TASKS.values() if task.id in generated_ids
