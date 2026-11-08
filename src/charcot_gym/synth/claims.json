@@ -78,6 +78,26 @@
       ],
       "plan": "Replacement and repeat testing were discussed."
     },
+    "heart_failure_followup": {
+      "service": "A chronic heart failure follow-up visit was completed.",
+      "diagnosis_evidence": ["Chronic HFpEF was assessed and the follow-up plan reviewed."],
+      "plan": "Continue the heart failure plan and monitor laboratory results."
+    },
+    "hypothyroidism_followup": {
+      "service": "A thyroid follow-up visit was completed.",
+      "diagnosis_evidence": ["Hypothyroidism was assessed and thyroid replacement reviewed."],
+      "plan": "Review thyroid replacement and repeat testing after the dose adjustment."
+    },
+    "iron_deficiency_infusion": {
+      "service": "An outpatient iron infusion was completed.",
+      "diagnosis_evidence": ["Iron replacement was provided for iron deficiency anemia."],
+      "plan": "Monitor the blood count and iron response."
+    },
+    "rheumatology_biologic_infusion": {
+      "service": "An outpatient biologic infusion was completed.",
+      "diagnosis_evidence": ["Biologic treatment was provided for rheumatoid arthritis."],
+      "plan": "Monitor treatment response and adverse effects."
+    },
     "oncology_precycle": {
       "service": "A pre-cycle infusion visit was completed.",
       "diagnosis_evidence": [
@@ -119,6 +139,50 @@
           "name": "Potassium chloride injection",
           "dose": "27",
           "dose_unit": "mEq",
+          "medication": true
+        }
+      ]
+    },
+    "heart_failure_followup": {
+      "items": [
+        {
+          "code": "G0463",
+          "name": "Hospital outpatient clinic visit",
+          "dose": "1",
+          "dose_unit": "visit",
+          "medication": false
+        }
+      ]
+    },
+    "hypothyroidism_followup": {
+      "items": [
+        {
+          "code": "G0463",
+          "name": "Hospital outpatient clinic visit",
+          "dose": "1",
+          "dose_unit": "visit",
+          "medication": false
+        }
+      ]
+    },
+    "iron_deficiency_infusion": {
+      "items": [
+        {
+          "code": "J1756",
+          "name": "Iron sucrose",
+          "dose": "200",
+          "dose_unit": "mg",
+          "medication": true
+        }
+      ]
+    },
+    "rheumatology_biologic_infusion": {
+      "items": [
+        {
+          "code": "J0129",
+          "name": "Abatacept",
+          "dose": "750",
+          "dose_unit": "mg",
           "medication": true
         }
       ]
@@ -260,6 +324,16 @@
         ]
       ]
     }
+  },
+  "scenario_diagnoses": {
+    "routine": ["Z00.00"],
+    "aki": ["N17.9"],
+    "uncontrolled_diabetes": ["E11.65"],
+    "hypokalemia": ["E87.6"],
+    "heart_failure_followup": ["I50.32"],
+    "hypothyroidism_followup": ["E03.9"],
+    "iron_deficiency_infusion": ["D50.9"],
+    "rheumatology_biologic_infusion": ["M06.9"]
   },
   "hcpcs_system_aliases": [
     "http://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets",

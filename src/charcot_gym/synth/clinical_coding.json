@@ -19,7 +19,11 @@
   "scenario_codes": {
     "aki": ["N17.9"],
     "uncontrolled_diabetes": ["E11.65"],
-    "hypokalemia": ["E87.6"]
+    "hypokalemia": ["E87.6"],
+    "heart_failure_followup": ["I50.32"],
+    "hypothyroidism_followup": ["E03.9"],
+    "iron_deficiency_infusion": ["D50.9"],
+    "rheumatology_biologic_infusion": ["M06.9"]
   },
   "oncology": {
     "clear_codes": ["Z51.11"],
@@ -58,7 +62,14 @@
     "due to chemotherapy",
     "chemotherapy-induced",
     "annual physical",
-    "general adult exam"
+    "general adult exam",
+    "chronic heart failure follow-up",
+    "chronic diastolic heart failure",
+    "chronic HFpEF",
+    "HFpEF",
+    "hypothyroidism",
+    "iron deficiency anemia",
+    "rheumatoid arthritis"
   ],
   "documentation_terms": {
     "I10": ["hypertension", "HTN"],
@@ -75,10 +86,7 @@
     "N17.9": ["acute kidney injury", "AKI"],
     "E87.6": ["hypokalemia", "hypoK"],
     "D70.1": ["chemotherapy-induced neutropenia", "neutropenia due to chemotherapy"],
-    "D69.59": [
-      "chemotherapy-induced thrombocytopenia",
-      "thrombocytopenia due to chemotherapy"
-    ],
+    "D69.59": ["chemotherapy-induced thrombocytopenia", "thrombocytopenia due to chemotherapy"],
     "Z53.09": [
       "held today because of low counts",
       "held because of low counts",
@@ -106,9 +114,13 @@
     ],
     "I50.32": [
       "chronic diastolic heart failure",
+      "HFpEF",
       "chronic HFpEF",
       "chronic heart failure with preserved ejection fraction"
     ],
+    "E03.9": ["hypothyroidism", "underactive thyroid"],
+    "D50.9": ["iron deficiency anemia"],
+    "M06.9": ["rheumatoid arthritis"],
     "I69.351": [
       "residual right-sided hemiplegia after cerebral infarction",
       "right hemiparesis persists after prior stroke"
@@ -207,30 +219,75 @@
     "routine": {
       "diagnoses": {
         "I10": [
-          {"public": "Hypertension remains at goal on the current regimen.", "abbrev": "HTN remains at goal on current regimen."},
-          {"public": "Current therapy continues to keep hypertension controlled.", "abbrev": "Current therapy keeps HTN controlled."},
-          {"public": "Hypertension is stable with the present treatment plan.", "abbrev": "HTN is stable with the present plan."}
+          {
+            "public": "Hypertension remains at goal on the current regimen.",
+            "abbrev": "HTN remains at goal on current regimen."
+          },
+          {
+            "public": "Current therapy continues to keep hypertension controlled.",
+            "abbrev": "Current therapy keeps HTN controlled."
+          },
+          {
+            "public": "Hypertension is stable with the present treatment plan.",
+            "abbrev": "HTN is stable with the present plan."
+          }
         ],
         "E78.5": [
-          {"public": "Hyperlipidemia remains stable on the current therapy.", "abbrev": "HLD remains stable on current therapy."},
-          {"public": "Recent lipid results were reviewed for dyslipidemia; continue the present approach.", "abbrev": "Dyslipidemia reviewed; continue current approach."},
-          {"public": "The current plan is maintaining stable hyperlipidemia control.", "abbrev": "Current plan maintains stable HLD control."}
+          {
+            "public": "Hyperlipidemia remains stable on the current therapy.",
+            "abbrev": "HLD remains stable on current therapy."
+          },
+          {
+            "public": "Recent lipid results were reviewed for dyslipidemia; continue the present approach.",
+            "abbrev": "Dyslipidemia reviewed; continue current approach."
+          },
+          {
+            "public": "The current plan is maintaining stable hyperlipidemia control.",
+            "abbrev": "Current plan maintains stable HLD control."
+          }
         ],
         "E66.9": [
-          {"public": "Obesity was addressed; nutrition and activity goals were reviewed.", "abbrev": "Obesity addressed; nutrition and activity goals reviewed."},
-          {"public": "The patient is obese; continue working toward the agreed nutrition and activity goals.", "abbrev": "Patient is obese; continue nutrition and activity goals."},
-          {"public": "Obesity management goals were discussed and will be revisited at follow-up.", "abbrev": "Obesity goals discussed; revisit at follow-up."}
+          {
+            "public": "Obesity was addressed; nutrition and activity goals were reviewed.",
+            "abbrev": "Obesity addressed; nutrition and activity goals reviewed."
+          },
+          {
+            "public": "The patient is obese; continue working toward the agreed nutrition and activity goals.",
+            "abbrev": "Patient is obese; continue nutrition and activity goals."
+          },
+          {
+            "public": "Obesity management goals were discussed and will be revisited at follow-up.",
+            "abbrev": "Obesity goals discussed; revisit at follow-up."
+          }
         ],
         "Z00.00": [
-          {"public": "The annual physical showed no new concerns.", "abbrev": "Annual physical; no new concerns."},
-          {"public": "The general adult exam was completed; preventive needs were reviewed.", "abbrev": "General adult exam completed; preventive needs reviewed."},
-          {"public": "Today's annual physical focused on preventive care and wellness.", "abbrev": "Annual physical focused on preventive care."}
+          {
+            "public": "The annual physical showed no new concerns.",
+            "abbrev": "Annual physical; no new concerns."
+          },
+          {
+            "public": "The general adult exam was completed; preventive needs were reviewed.",
+            "abbrev": "General adult exam completed; preventive needs reviewed."
+          },
+          {
+            "public": "Today's annual physical focused on preventive care and wellness.",
+            "abbrev": "Annual physical focused on preventive care."
+          }
         ]
       },
       "plans": [
-        {"public": "Continue the current care plan and follow up as scheduled.", "abbrev": "Continue current plan; follow up as scheduled."},
-        {"public": "Maintain the present regimen and return for the next planned visit.", "abbrev": "Maintain regimen; return as planned."},
-        {"public": "Continue routine monitoring and revisit the plan at follow-up.", "abbrev": "Continue routine monitoring; revisit at follow-up."}
+        {
+          "public": "Continue the current care plan and follow up as scheduled.",
+          "abbrev": "Continue current plan; follow up as scheduled."
+        },
+        {
+          "public": "Maintain the present regimen and return for the next planned visit.",
+          "abbrev": "Maintain regimen; return as planned."
+        },
+        {
+          "public": "Continue routine monitoring and revisit the plan at follow-up.",
+          "abbrev": "Continue routine monitoring; revisit at follow-up."
+        }
       ]
     },
     "aki": [
@@ -332,6 +389,86 @@
         "plan_public": "Continue supportive measures and repeat laboratory testing before the next attempt.",
         "plan_abbrev": "Continue supportive care; repeat labs before the next attempt."
       }
+    ],
+    "heart_failure_followup": [
+      {
+        "assessment_public": "Chronic HFpEF follow-up reviewed BNP and renal function.",
+        "assessment_abbrev": "Chronic HFpEF follow-up; BNP and renal function reviewed.",
+        "plan_public": "Continue the heart failure plan and repeat chemistry testing at follow-up.",
+        "plan_abbrev": "Continue HF plan; repeat chemistry at follow-up."
+      },
+      {
+        "assessment_public": "HFpEF is stable on follow-up, with elevated BNP and renal function reviewed.",
+        "assessment_abbrev": "HFpEF follow-up; elevated BNP and renal function reviewed.",
+        "plan_public": "Continue heart failure treatment and repeat chemistry testing at the next visit.",
+        "plan_abbrev": "Continue HF treatment; repeat chemistry at next visit."
+      },
+      {
+        "assessment_public": "Chronic diastolic heart failure follow-up with BNP elevation and renal monitoring.",
+        "assessment_abbrev": "Chronic diastolic HF follow-up; BNP and renal monitoring.",
+        "plan_public": "Maintain the current plan and recheck BNP and chemistry at follow-up.",
+        "plan_abbrev": "Maintain plan; recheck BNP and chemistry."
+      }
+    ],
+    "hypothyroidism_followup": [
+      {
+        "assessment_public": "Hypothyroidism remains above target on follow-up testing.",
+        "assessment_abbrev": "Hypothyroidism remains above target on follow-up labs.",
+        "plan_public": "Review thyroid replacement and repeat TSH and free T4 after the dose adjustment.",
+        "plan_abbrev": "Review replacement; repeat TSH and free T4 after dose change."
+      },
+      {
+        "assessment_public": "Primary hypothyroidism persists with elevated TSH and low free T4.",
+        "assessment_abbrev": "Primary hypothyroidism; TSH high and free T4 low.",
+        "plan_public": "Adjust thyroid replacement and reassess TSH and free T4 at follow-up.",
+        "plan_abbrev": "Adjust replacement; reassess TSH and free T4."
+      },
+      {
+        "assessment_public": "Thyroid replacement follow-up shows persistent hypothyroidism.",
+        "assessment_abbrev": "Persistent hypothyroidism on replacement follow-up.",
+        "plan_public": "Continue dose titration and repeat thyroid tests as planned.",
+        "plan_abbrev": "Continue titration; repeat thyroid tests."
+      }
+    ],
+    "iron_deficiency_infusion": [
+      {
+        "assessment_public": "Iron deficiency anemia remains symptomatic with low hemoglobin.",
+        "assessment_abbrev": "Iron deficiency anemia with low Hgb.",
+        "plan_public": "Proceed with the planned iron replacement and monitor the blood count.",
+        "plan_abbrev": "Proceed with iron replacement; monitor CBC."
+      },
+      {
+        "assessment_public": "Documented iron-deficiency anemia with ongoing fatigue and low hemoglobin.",
+        "assessment_abbrev": "Iron-deficiency anemia with fatigue and low Hgb.",
+        "plan_public": "Continue iron replacement and reassess the blood count after treatment.",
+        "plan_abbrev": "Continue iron replacement; reassess CBC."
+      },
+      {
+        "assessment_public": "Symptomatic iron deficiency anemia persists with a low hemoglobin level.",
+        "assessment_abbrev": "Symptomatic iron deficiency anemia; Hgb remains low.",
+        "plan_public": "Complete the infusion course and repeat the blood count.",
+        "plan_abbrev": "Complete infusion course; repeat CBC."
+      }
+    ],
+    "rheumatology_biologic_infusion": [
+      {
+        "assessment_public": "Rheumatoid arthritis remains active despite the current regimen.",
+        "assessment_abbrev": "Active rheumatoid arthritis despite current regimen.",
+        "plan_public": "Continue biologic treatment and monitor for response and adverse effects.",
+        "plan_abbrev": "Continue biologic; monitor response and adverse effects."
+      },
+      {
+        "assessment_public": "Active rheumatoid arthritis with persistent inflammatory joint symptoms.",
+        "assessment_abbrev": "Active rheumatoid arthritis with persistent joint symptoms.",
+        "plan_public": "Continue biologic therapy and assess disease activity at follow-up.",
+        "plan_abbrev": "Continue biologic; reassess disease activity."
+      },
+      {
+        "assessment_public": "Rheumatoid arthritis remains inadequately controlled despite therapy.",
+        "assessment_abbrev": "Rheumatoid arthritis remains active despite therapy.",
+        "plan_public": "Continue the biologic regimen and monitor response and tolerance.",
+        "plan_abbrev": "Continue biologic; monitor response and tolerance."
+      }
     ]
   },
   "lab_abbreviations": {
@@ -355,14 +492,20 @@
     "1920-8": "AST/SGOT",
     "751-8": "ANC",
     "2039-6": "CEA",
-    "2857-1": "PSA"
+    "2857-1": "PSA",
+    "30934-4": "BNP",
+    "3024-7": "Free T4"
   },
   "subjective": {
     "routine": "Patient presents for a scheduled outpatient follow-up.",
     "aki": "Patient presents for follow-up of recent renal function changes.",
     "uncontrolled_diabetes": "Patient presents for diabetes follow-up.",
     "hypokalemia": "Patient presents for follow-up of a low potassium result.",
-    "oncology": "Patient presents for a scheduled infusion visit; the known malignancy is already on the problem list."
+    "oncology": "Patient presents for a scheduled infusion visit; the known malignancy is already on the problem list.",
+    "heart_failure_followup": "Patient presents for chronic HFpEF follow-up.",
+    "hypothyroidism_followup": "Patient presents for thyroid follow-up.",
+    "iron_deficiency_infusion": "Patient presents for iron replacement for iron deficiency anemia.",
+    "rheumatology_biologic_infusion": "Patient presents for biologic treatment of rheumatoid arthritis."
   },
   "distractors": {
     "count": {"min": 1, "max": 2},
