@@ -43,7 +43,10 @@ def hard_claims() -> list[Task]:
     return [
         task
         for task in load_tasks()
-        if task.family == "claims" and task.difficulty == "hard" and task.modality == "text"
+        if task.family == "claims"
+        and task.difficulty == "hard"
+        and task.modality == "text"
+        and task.metadata.get("variant_group") == "claims:oncology_infusion"
     ]
 
 

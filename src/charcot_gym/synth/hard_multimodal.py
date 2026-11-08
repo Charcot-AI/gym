@@ -50,8 +50,13 @@ def prepare_multimodal_task(
         raise ValueError("distributions can only be used for private tasks")
     family = task["family"]
     source_id = task["id"]
-    number = source_id.rsplit("-", 1)[-1]
-    variant["id"] = f"{family.replace('_', '-')}-hard-mm-{split}-{number}"
+    task_prefix = f"{family.replace('_', '-')}-hard-"
+    prefix_index = source_id.find(task_prefix)
+    if prefix_index < 0:
+        raise ValueError(f"Hard task ID must start with {task_prefix}")
+    source_prefix = source_id[:prefix_index]
+    source_suffix = source_id[prefix_index + len(task_prefix) :]
+    variant["id"] = f"{source_prefix}{family.replace('_', '-')}-hard-mm-{source_suffix}"
     variant["modality"] = "image"
     variant["environment"] = {
         "inbox": {"documents": []},
