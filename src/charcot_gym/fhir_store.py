@@ -27,6 +27,11 @@ SUPPORTED_TYPES = {
     "Claim",
     "Task",
     "ClinicalImpression",
+    "Device",
+    "DeviceUsage",
+    "Procedure",
+    "Immunization",
+    "FamilyMemberHistory",
 }
 REFERENCE_PATTERN = re.compile(r"^([A-Z][A-Za-z]+)/([A-Za-z0-9.-]{1,64})$")
 REQUIRED_FIELDS = {
@@ -49,6 +54,11 @@ REQUIRED_FIELDS = {
     "Provenance": ("target", "recorded"),
     "AllergyIntolerance": ("patient",),
     "ClinicalImpression": ("status", "subject"),
+    "Device": ("type",),
+    "DeviceUsage": ("status", "patient", "device"),
+    "Procedure": ("status", "subject"),
+    "Immunization": ("status", "vaccineCode", "patient", "occurrenceDateTime"),
+    "FamilyMemberHistory": ("status", "patient", "relationship"),
 }
 PATIENT_REFERENCE_FIELDS = {
     "Observation": "subject",
@@ -67,6 +77,10 @@ PATIENT_REFERENCE_FIELDS = {
     "AllergyIntolerance": "patient",
     "Communication": "subject",
     "ClinicalImpression": "subject",
+    "DeviceUsage": "patient",
+    "Procedure": "subject",
+    "Immunization": "patient",
+    "FamilyMemberHistory": "patient",
 }
 SUBJECT_SEARCH_TYPES = {
     "ClinicalImpression",
@@ -80,6 +94,7 @@ SUBJECT_SEARCH_TYPES = {
     "Communication",
     "MedicationStatement",
     "QuestionnaireResponse",
+    "Procedure",
 }
 DATE_FIELDS = {
     "Observation": (("effectiveDateTime",),),
@@ -98,6 +113,10 @@ DATE_FIELDS = {
     "MedicationStatement": (("effectiveDateTime",),),
     "QuestionnaireResponse": (("authored",),),
     "Claim": (("created",),),
+    "DeviceUsage": (("dateAsserted",), ("timingDateTime",)),
+    "Procedure": (("performedDateTime",), ("performedPeriod", "start")),
+    "Immunization": (("occurrenceDateTime",),),
+    "FamilyMemberHistory": (("date",),),
 }
 SUPPORTED_SEARCH_PARAMETERS = {
     "subject",
@@ -203,12 +222,18 @@ class FHIRStore:
             raise ValueError(f"resource not found: {resource_type}/{resource_id}") from error
 
     def create(self, resource: dict[str, Any]) -> dict[str, Any]:
-        """Validate and store a copy with a deterministic generated id."""
+        """Validate and store a copy with a deterministic id."""
         candidate = deepcopy(resource)
         resource_type = candidate.get("resourceType")
         if resource_type not in SUPPORTED_TYPES:
             raise ValueError(f"unsupported FHIR resource type: {resource_type}")
-        candidate["id"] = self._next_id(str(resource_type))
+        resource_id = candidate.get("id")
+        if resource_type == "Device" and isinstance(resource_id, str) and resource_id:
+            if (resource_type, resource_id) in self._resources:
+                raise ValueError(f"duplicate resource: {resource_type}/{resource_id}")
+        else:
+            resource_id = self._next_id(str(resource_type))
+        candidate["id"] = resource_id
         self._validate(candidate)
         self._resources[(str(resource_type), candidate["id"])] = candidate
         return deepcopy(candidate)
@@ -262,11 +287,12 @@ class FHIRStore:
         if isinstance(value, dict):
             reference = value.get("reference")
             if reference is not None:
-                if not isinstance(reference, str):
+                if isinstance(reference, str):
+                    match = REFERENCE_PATTERN.fullmatch(reference)
+                    if match is None or (match.group(1), match.group(2)) not in self._resources:
+                        raise ValueError(f"reference does not resolve: {reference}")
+                elif not isinstance(reference, dict):
                     raise ValueError("FHIR reference must be a string")
-                match = REFERENCE_PATTERN.fullmatch(reference)
-                if match is None or (match.group(1), match.group(2)) not in self._resources:
-                    raise ValueError(f"reference does not resolve: {reference}")
             for nested in value.values():
                 self._validate_references(nested)
         elif isinstance(value, list):

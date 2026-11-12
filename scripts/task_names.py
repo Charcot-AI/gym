@@ -5,5 +5,6 @@ FAMILY_DISPLAY_NAMES = {
     "clinical_reasoning": "Clinical reasoning",
     "document_fhir": "Document → FHIR",
     "ehr_web": "Web EHR",
+    "ips_summary": "IPS summary",
     "smoke": "Smoke",
 }

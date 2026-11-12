@@ -12,6 +12,7 @@ from typing import Any
 LOINC_SYSTEM_URI = "http://loinc.org"
 UCUM_SYSTEM_URI = "http://unitsofmeasure.org"
 ICD10CM_SYSTEM_URI = "http://hl7.org/fhir/sid/icd-10-cm"
+ICD10_SYSTEM_URI = "http://hl7.org/fhir/sid/icd-10"
 HCPCS_SYSTEM_URI = "http://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets"
 HL7_HCPCS_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/HCPCS"
 CONDITION_CLINICAL_SYSTEM_URI = "http://terminology.hl7.org/CodeSystem/condition-clinical"
@@ -159,6 +160,7 @@ def _entries() -> tuple[dict[str, Any], ...]:
         "loinc_subset.json",
         "ucum_subset.json",
         "icd10cm_subset.json",
+        "icd10_subset.json",
         "hcpcs_subset.json",
     ):
         content = data.joinpath(filename).read_text(encoding="utf-8")
