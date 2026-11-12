@@ -36,7 +36,7 @@ def document_tasks() -> list[Task]:
     return [
         task
         for task in load_tasks()
-        if task.family == "document_fhir" and task.difficulty == "standard"
+        if task.family != "ips_summary" and task.difficulty == "standard"
     ]
 
 
@@ -204,7 +204,7 @@ def test_every_task_starts_with_an_outpatient_encounter() -> None:
     tasks = [
         task
         for task in load_tasks()
-        if task.family == "document_fhir" and task.difficulty == "standard"
+        if task.family != "ips_summary" and task.difficulty == "standard"
     ]
     for task in tasks:
         encounters = [
