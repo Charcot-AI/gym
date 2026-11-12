@@ -36,7 +36,7 @@ def document_tasks() -> list[Task]:
     return [
         task
         for task in load_tasks()
-        if task.family != "ips_summary" and task.difficulty == "standard"
+        if task.family == "document_fhir" and task.difficulty == "standard"
     ]
 
 
