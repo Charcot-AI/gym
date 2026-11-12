@@ -201,7 +201,11 @@ def test_write_to_another_patient_scores_zero() -> None:
 
 
 def test_every_task_starts_with_an_outpatient_encounter() -> None:
-    tasks = [task for task in load_tasks() if task.difficulty == "standard"]
+    tasks = [
+        task
+        for task in load_tasks()
+        if task.family == "document_fhir" and task.difficulty == "standard"
+    ]
     for task in tasks:
         encounters = [
             entry["resource"]
