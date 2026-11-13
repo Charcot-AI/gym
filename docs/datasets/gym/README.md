@@ -52,7 +52,7 @@ row = next(
     if row["modality"] == "text" and row["family"] == "claims"
 )
 task = Task.model_validate(
-    {key: value for key, value in row.items() if key != "images"}
+    dict(row)
     | {
         key: json.loads(row[key])
         for key in ("initial_state", "environment", "gold", "case", "metadata")
