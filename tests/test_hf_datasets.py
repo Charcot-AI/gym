@@ -35,6 +35,22 @@ write_dataset = hf_datasets.write_dataset
 PUBLIC_TASKS = [task for task in load_tasks() if task.split == "public"]
 
 
+@pytest.mark.parametrize("missing", [("band", "source_level"), (), ("id",)])
+def test_row_task_missing_fields(missing: tuple[str, ...]) -> None:
+    task = PUBLIC_TASKS[0]
+    row = hf_datasets.task_row(task, None)
+    for name in missing:
+        row.pop(name)
+    if "id" in missing:
+        with pytest.raises(ValueError):
+            row_task(row)
+    else:
+        rebuilt = row_task(row)
+        assert rebuilt.id == task.id
+        assert rebuilt.band == (None if "band" in missing else task.band)
+        assert rebuilt.source_level == (None if "source_level" in missing else task.source_level)
+
+
 def _image_bytes(image: Any) -> bytes:
     if isinstance(image, dict):
         content = image["bytes"]
@@ -153,7 +169,7 @@ def test_public_dataset_round_trip_and_oracle(tmp_path: Path) -> None:
 
     image_rows = [row for row in exported if row["modality"] == "image"]
     assert image_rows
-    assert (tmp_path / "assets" / "charcot-logo-black.png").is_file()
+    assert (tmp_path / "assets" / "charcot-logo-violet.png").is_file()
     for row in image_rows:
         task = originals[row["id"]]
         expected = [
