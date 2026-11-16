@@ -9,6 +9,10 @@
 - Prefer a small number of parametrized tests through the public API.
 - Use synthetic data only.
 
+## Security
+
+See [SECURITY.md](SECURITY.md) to report vulnerabilities privately.
+
 ## Checks
 
 ```sh
